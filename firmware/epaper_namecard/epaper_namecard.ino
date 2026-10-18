@@ -4,7 +4,8 @@
   架構：
     排版、文字、圖片縮放、抖色(dithering)、QR Code 全部在「連上 ESP 的手機/電腦瀏覽器」裡運算，
     瀏覽器把最終的 1-bit 點陣圖送給 ESP；ESP 只負責存檔與刷新電子紙。
-    最多存 MAX_PAGES 張圖，每張都有自己可再編輯的版面檔，用旋轉編碼器或 BOOT 鍵切換。
+    最多存 MAX_PAGES 頁，每頁可以是一張靜態圖（有可再編輯的版面檔）或一段動畫/影片（多張影格），
+    用旋轉編碼器、BOOT 鍵或網頁切換。動畫用局部刷新播放，約每秒 1~3 格。
 
   需求：
     - Arduino IDE 2.x，開發板套件 "esp32 by Espressif Systems" 3.x
@@ -61,13 +62,33 @@ WebServer server(80);
 Preferences prefs;
 String apSsid, wifiSsid, wifiPass;
 uint32_t lastActivity = 0;
+bool showIpWhenConnected = false;  // 從網頁改 Wi-Fi 後，連上時把 IP 印在電子紙上
 int curPage = 0;  // 目前螢幕上顯示的頁
 
-// 每頁兩個檔：/pN.bin = [w lo][w hi][h lo][h hi][rot] + 點陣資料；/pN.json = 版面檔
+// 每頁的檔案：
+//   /pN.bin  靜態圖 = [w lo][w hi][h lo][h hi][rot] + 點陣資料
+//   /pN.anim 動畫   = 16 bytes 檔頭 "EPA1" w(2) h(2) rot(1) count(2) intervalMs(2) fullEvery(1) 保留(2) + count 張影格
+//   /pN.json 版面檔（網頁編輯器用）
+// 一頁只會有 .bin 或 .anim 其中一個。
 String imgPath(int p) { return "/p" + String(p) + ".bin"; }
+String animPath(int p) { return "/p" + String(p) + ".anim"; }
 String layoutPath(int p) { return "/p" + String(p) + ".json"; }
-static const char *LAYOUT_TMP = "/layout.tmp";
+static const char *UPLOAD_TMP = "/upload.tmp";
 static const size_t MAX_LAYOUT = 512 * 1024;
+static const size_t ANIM_HDR = 16;
+
+// 動畫播放狀態（結構要放在所有函式之前，Arduino 自動產生的函式宣告才看得到）
+struct AnimPlayer {
+  bool active = false;
+  File f;
+  int page = -1;
+  uint16_t w = 0, h = 0, count = 0, interval = 500, idx = 0, sinceFull = 0;
+  uint8_t rot = 0, fullEvery = 0;
+  size_t frameBytes = 0;
+  uint8_t *buf = nullptr;
+  uint32_t nextAt = 0;
+} anim;
+
 
 void led(uint8_t r, uint8_t g, uint8_t b) { rgbLedWrite(LED_PIN, r, g, b); }
 
@@ -100,7 +121,14 @@ void migrateOldFiles() {
 }
 
 bool pageValid(int p) { return p >= 0 && p < MAX_PAGES; }
-bool pageHasImage(int p) { return pageValid(p) && LittleFS.exists(imgPath(p)); }
+// 0 = 空白、1 = 靜態圖、2 = 動畫
+int pageType(int p) {
+  if (!pageValid(p)) return 0;
+  if (LittleFS.exists(animPath(p))) return 2;
+  if (LittleFS.exists(imgPath(p))) return 1;
+  return 0;
+}
+bool pageHasImage(int p) { return pageType(p) != 0; }
 bool anyImage() {
   for (int p = 0; p < MAX_PAGES; p++)
     if (pageHasImage(p)) return true;
@@ -118,7 +146,79 @@ void showBitmap(const uint8_t *bits, int w, int h, uint8_t rot, bool fast) {
   display.hibernate();
 }
 
-bool showPage(int p) {
+// ---------- 動畫播放 ----------
+// 動畫檔頭；read() 讀檔頭並檢查尺寸、檔案大小是否正確
+struct AnimHeader {
+  uint16_t w, h, count, interval;
+  uint8_t rot, fullEvery;
+
+  bool read(File &f) {
+    uint8_t hd[ANIM_HDR];
+    if (!f || f.size() < ANIM_HDR || f.read(hd, ANIM_HDR) != ANIM_HDR || memcmp(hd, "EPA1", 4) != 0) return false;
+    w = hd[4] | (hd[5] << 8);
+    h = hd[6] | (hd[7] << 8);
+    rot = hd[8] & 3;
+    count = hd[9] | (hd[10] << 8);
+    interval = hd[11] | (hd[12] << 8);
+    fullEvery = hd[13];
+    int ew = (rot & 1) ? EPD_DRIVER::HEIGHT : EPD_DRIVER::WIDTH;
+    int eh = (rot & 1) ? EPD_DRIVER::WIDTH : EPD_DRIVER::HEIGHT;
+    size_t fb = (size_t)((w + 7) / 8) * h;
+    return w == ew && h == eh && count > 0 && f.size() == ANIM_HDR + fb * count;
+  }
+};
+
+
+void stopAnim() {
+  if (!anim.active) return;
+  anim.active = false;
+  anim.f.close();
+  free(anim.buf);
+  anim.buf = nullptr;
+  anim.page = -1;
+  display.hibernate();
+}
+
+bool startAnim(int p) {
+  stopAnim();
+  File f = LittleFS.open(animPath(p), "r");
+  AnimHeader a;
+  if (!a.read(f)) { if (f) f.close(); return false; }
+  anim.frameBytes = (size_t)((a.w + 7) / 8) * a.h;
+  anim.buf = (uint8_t *)malloc(anim.frameBytes);
+  if (!anim.buf) { f.close(); return false; }
+  anim.f = f;
+  anim.w = a.w; anim.h = a.h; anim.rot = a.rot; anim.count = a.count;
+  anim.interval = a.interval; anim.fullEvery = a.fullEvery;
+  anim.idx = 0; anim.sinceFull = 0; anim.page = p;
+  anim.nextAt = millis();
+  anim.active = true;
+  curPage = p;
+  saveCurPage();
+  return true;
+}
+
+// 主迴圈呼叫：時間到就畫下一格。第一格與每 fullEvery 格全刷一次清殘影，其餘局部刷新。
+void animTick() {
+  if (!anim.active || (int32_t)(millis() - anim.nextAt) < 0) return;
+  uint32_t t0 = millis();
+  anim.f.seek(ANIM_HDR + (size_t)anim.idx * anim.frameBytes);
+  if (anim.f.read(anim.buf, anim.frameBytes) != anim.frameBytes) { stopAnim(); return; }
+  bool full = anim.sinceFull == 0 || !display.epd2.hasFastPartialUpdate;
+  display.setRotation(anim.rot);
+  display.setFullWindow();
+  display.fillScreen(GxEPD_WHITE);
+  display.drawBitmap(0, 0, anim.buf, anim.w, anim.h, GxEPD_BLACK);
+  display.display(!full);
+  anim.sinceFull = full ? 1 : anim.sinceFull + 1;
+  if (anim.fullEvery && anim.sinceFull >= anim.fullEvery) anim.sinceFull = 0;
+  anim.idx = (anim.idx + 1) % anim.count;
+  anim.nextAt = t0 + anim.interval;  // interval = 每格目標間隔；刷新比較慢時就會立刻接下一格
+  lastActivity = millis();           // 播放中不休眠
+}
+
+bool showStill(int p) {
+  stopAnim();
   File f = LittleFS.open(imgPath(p), "r");
   if (!f || f.size() < 6) return false;
   size_t n = f.size();
@@ -137,6 +237,10 @@ bool showPage(int p) {
   return ok;
 }
 
+bool showPage(int p) { return pageType(p) == 2 ? startAnim(p) : showStill(p); }
+// 這頁是否已經在螢幕上（動畫頁要正在播放才算）
+bool isShowing(int p) { return p == curPage && (pageType(p) != 2 || anim.active); }
+
 // 在「有圖的頁」之間前進/後退 n 張（循環）
 bool stepPages(int n) {
   int list[MAX_PAGES], cnt = 0, idx = -1;
@@ -148,33 +252,40 @@ bool stepPages(int n) {
   if (cnt == 0) return false;
   if (idx < 0) idx = n > 0 ? -1 : 0;  // 目前頁沒圖：往後從第一張開始、往前從最後一張開始
   int target = list[(((idx + n) % cnt) + cnt) % cnt];
-  return target == curPage ? true : showPage(target);
+  return isShowing(target) ? true : showPage(target);
 }
 bool showNextPage() { return stepPages(1); }
 bool showFirstPage() {
   for (int p = 0; p < MAX_PAGES; p++)
-    if (pageHasImage(p)) return p == curPage ? true : showPage(p);
+    if (pageHasImage(p)) return isShowing(p) ? true : showPage(p);
   return false;
 }
 
 void renderNetInfo() {
+  stopAnim();
   display.setRotation(1);
   display.setFullWindow();
   display.fillScreen(GxEPD_WHITE);
   display.setTextColor(GxEPD_BLACK);
-  display.setTextSize(2);
-  display.setCursor(6, 6);
-  display.print("E-Paper Card");
-  display.setTextSize(1);
-  int y = 34;
-  auto line = [&](const String &s) { display.setCursor(6, y); display.print(s); y += 14; };
-  line("WiFi: " + apSsid);
-  line("Pass: " AP_PASSWORD);
-  line("Open: http://" + WiFi.softAPIP().toString());
+  int y = 6;
+  auto line = [&](const String &s, int size) {
+    display.setTextSize(size);
+    display.setCursor(6, y);
+    display.print(s);
+    y += 8 * size + 6;
+  };
   if (WiFi.status() == WL_CONNECTED) {
-    line(wifiSsid + ": http://" + WiFi.localIP().toString());
-    line("or http://" MDNS_NAME ".local");
+    // 已連上區網：IP 用大字，手機在同一個 Wi-Fi 下開這個網址
+    line("LAN: " + wifiSsid, 1);
+    line("http://" + WiFi.localIP().toString(), 2);
+    line("or http://" MDNS_NAME ".local", 1);
+    y += 4;
+  } else {
+    line("E-Paper Card", 2);
+    if (wifiSsid.length()) line("LAN " + wifiSsid + ": " + staStatus(), 1);
   }
+  line("Hotspot: " + apSsid + "  Pass: " AP_PASSWORD, 1);
+  line("http://" + WiFi.softAPIP().toString(), 1);
   display.display(false);
   display.hibernate();
 }
@@ -210,15 +321,19 @@ void handleInfo() {
   str("apip", WiFi.softAPIP().toString());
   str("ssid", wifiSsid);
   str("staip", WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : String());
+  str("sta", staStatus());
   j += "\"w\":" + String(EPD_DRIVER::WIDTH) + ",\"h\":" + String(EPD_DRIVER::HEIGHT);
   j += ",\"sleepMin\":" + String(SLEEP_AFTER_MIN);
   j += ",\"button\":" + String(BUTTON_PIN) + ",\"encoder\":[" + String(ENC_CLK_PIN) + "," + String(ENC_DT_PIN) + "," + String(ENC_SW_PIN) + "]";
   j += ",\"cur\":" + String(curPage) + ",\"pages\":[";
   for (int p = 0; p < MAX_PAGES; p++) {
     if (p) j += ",";
-    j += pageHasImage(p) ? "1" : "0";
+    j += String(pageType(p));
   }
-  j += "],\"fsFree\":" + String(LittleFS.totalBytes() - LittleFS.usedBytes()) + "}";
+  j += "],\"playing\":" + String(anim.active ? anim.page : -1);
+  j += ",\"partial\":" + String(display.epd2.hasFastPartialUpdate ? 1 : 0);
+  j += ",\"fsFree\":" + String(LittleFS.totalBytes() - LittleFS.usedBytes());
+  j += ",\"fsTotal\":" + String(LittleFS.totalBytes()) + "}";
   server.send(200, "application/json", j);
 }
 
@@ -246,6 +361,8 @@ void handleImage() {
     return;
   }
   buf[0] = w & 0xFF; buf[1] = w >> 8; buf[2] = h & 0xFF; buf[3] = h >> 8; buf[4] = rot;
+  stopAnim();
+  LittleFS.remove(animPath(page));  // 這頁改成靜態圖
   File f = LittleFS.open(imgPath(page), "w");
   if (f) { f.write(buf, need + 5); f.close(); }
   showBitmap(buf + 5, w, h, rot, fast);
@@ -263,32 +380,78 @@ void handleLayoutGet() {
   f.close();
 }
 
-// 版面檔用 multipart 上傳，邊收邊寫入 LittleFS，不佔 RAM
-File layoutUpload;
-size_t layoutSize = 0;
-void handleLayoutUpload() {
+// 版面檔、動畫檔都用 multipart 上傳，邊收邊寫入 LittleFS，不佔 RAM
+File uploadFile;
+size_t uploadSize = 0;
+bool uploadFailed = false;
+void handleUpload(size_t maxSize, bool isAnim) {
   HTTPUpload &up = server.upload();
+  lastActivity = millis();
   if (up.status == UPLOAD_FILE_START) {
-    layoutSize = 0;
-    layoutUpload = LittleFS.open(LAYOUT_TMP, "w");
+    uploadSize = 0;
+    uploadFailed = false;
+    if (isAnim) {  // 先停止播放並刪掉這頁舊檔，騰出空間
+      int page = argPage();
+      stopAnim();
+      if (page >= 0) LittleFS.remove(animPath(page));
+    }
+    LittleFS.remove(UPLOAD_TMP);
+    uploadFile = LittleFS.open(UPLOAD_TMP, "w");
+    if (!uploadFile) uploadFailed = true;
   } else if (up.status == UPLOAD_FILE_WRITE) {
-    layoutSize += up.currentSize;
-    if (layoutUpload && layoutSize <= MAX_LAYOUT) layoutUpload.write(up.buf, up.currentSize);
+    uploadSize += up.currentSize;
+    if (uploadSize > maxSize) uploadFailed = true;
+    if (!uploadFailed && uploadFile.write(up.buf, up.currentSize) != up.currentSize) uploadFailed = true;  // 空間不足
   } else if (up.status == UPLOAD_FILE_END || up.status == UPLOAD_FILE_ABORTED) {
-    if (layoutUpload) layoutUpload.close();
+    if (uploadFile) uploadFile.close();
+    if (up.status == UPLOAD_FILE_ABORTED) uploadFailed = true;
   }
+}
+
+// 上傳完成：檢查後把暫存檔改名成正式檔。回傳錯誤訊息，成功回空字串。
+String finishUpload(const String &dest, size_t maxSize) {
+  String err;
+  if (uploadFailed || uploadSize == 0 || !LittleFS.exists(UPLOAD_TMP))
+    err = uploadSize > maxSize ? "file too large" : "upload failed (storage full?)";
+  if (err.length()) { LittleFS.remove(UPLOAD_TMP); return err; }
+  LittleFS.remove(dest);
+  LittleFS.rename(UPLOAD_TMP, dest);
+  return err;
 }
 
 void handleLayoutDone() {
   int page = argPage();
-  if (page < 0 || layoutSize == 0 || layoutSize > MAX_LAYOUT || !LittleFS.exists(LAYOUT_TMP)) {
-    LittleFS.remove(LAYOUT_TMP);
-    server.send(400, "text/plain", layoutSize > MAX_LAYOUT ? "layout too large (max 512KB)" : "upload failed");
-    return;
+  String err = page < 0 ? String("bad page") : finishUpload(layoutPath(page), MAX_LAYOUT);
+  if (err.length()) server.send(400, "text/plain", err); else ok();
+}
+
+// POST /api/anim?page=  multipart 欄位 file = .anim 檔（格式見檔案開頭說明）
+void handleAnimDone() {
+  int page = argPage();
+  if (page < 0) { LittleFS.remove(UPLOAD_TMP); server.send(400, "text/plain", "bad page"); return; }
+  {
+    File f = LittleFS.open(UPLOAD_TMP, "r");
+    AnimHeader a;
+    bool valid = !uploadFailed && a.read(f);
+    if (f) f.close();
+    if (!valid && !uploadFailed) {
+      LittleFS.remove(UPLOAD_TMP);
+      server.send(400, "text/plain", "bad animation file (size mismatch?)");
+      return;
+    }
   }
-  LittleFS.remove(layoutPath(page));
-  LittleFS.rename(LAYOUT_TMP, layoutPath(page));
-  ok();
+  String err = finishUpload(animPath(page), SIZE_MAX);
+  if (err.length()) { server.send(400, "text/plain", err); return; }
+  LittleFS.remove(imgPath(page));  // 這頁改成動畫
+  startAnim(page) ? ok() : server.send(500, "text/plain", "cannot play");
+}
+
+void handleAnimGet() {
+  int page = argPage();
+  File f = page < 0 ? File() : LittleFS.open(animPath(page), "r");
+  if (!f) { server.send(404, "text/plain", "no animation"); return; }
+  server.streamFile(f, "application/octet-stream");
+  f.close();
 }
 
 void handleShow() {
@@ -300,12 +463,40 @@ void handleShow() {
 void handleDelete() {
   int page = argPage();
   if (page < 0) { server.send(400, "text/plain", "bad page"); return; }
+  if (anim.page == page) stopAnim();
   LittleFS.remove(imgPath(page));
+  LittleFS.remove(animPath(page));
   LittleFS.remove(layoutPath(page));
   if (page == curPage) {
     if (!showNextPage()) renderNetInfo();
   }
   ok();
+}
+
+// 區網連線狀態：none / connecting / connected / nossid（找不到網路）/ failed（多半是密碼錯）
+String staStatus() {
+  if (wifiSsid.isEmpty()) return "none";
+  switch (WiFi.status()) {
+    case WL_CONNECTED: return "connected";
+    case WL_NO_SSID_AVAIL: return "nossid";
+    case WL_CONNECT_FAILED: return "failed";
+    default: return "connecting";
+  }
+}
+
+// GET /api/scan：掃描附近的 Wi-Fi（約 2~4 秒）
+void handleScan() {
+  int n = WiFi.scanNetworks(false, false);
+  String j = "[";
+  for (int i = 0; i < n; i++) {
+    if (WiFi.SSID(i).isEmpty()) continue;
+    if (j.length() > 1) j += ",";
+    j += "{\"ssid\":\"" + jsonEsc(WiFi.SSID(i)) + "\",\"rssi\":" + String(WiFi.RSSI(i)) +
+         ",\"lock\":" + String(WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? 0 : 1) + "}";
+  }
+  j += "]";
+  WiFi.scanDelete();
+  server.send(200, "application/json", j);
 }
 
 void connectSta() {
@@ -322,6 +513,7 @@ void handleWifi() {
   saveWifi();
   ok();
   delay(100);
+  showIpWhenConnected = wifiSsid.length() > 0;
   if (wifiSsid.isEmpty()) WiFi.disconnect(); else connectSta();
 }
 
@@ -338,17 +530,19 @@ void setupServer() {
   route("/api/info", HTTP_GET, handleInfo);
   route("/api/image", HTTP_POST, handleImage);
   route("/api/layout", HTTP_GET, handleLayoutGet);
-  server.on("/api/layout", HTTP_POST, [] { lastActivity = millis(); handleLayoutDone(); }, [] {
-    lastActivity = millis();
-    handleLayoutUpload();
-  });
+  server.on("/api/layout", HTTP_POST, [] { lastActivity = millis(); handleLayoutDone(); }, [] { handleUpload(MAX_LAYOUT, false); });
+  route("/api/anim", HTTP_GET, handleAnimGet);
+  server.on("/api/anim", HTTP_POST, [] { lastActivity = millis(); handleAnimDone(); }, [] { handleUpload(SIZE_MAX, true); });
   route("/api/show", HTTP_POST, handleShow);
   route("/api/next", HTTP_POST, [] { showNextPage() ? ok() : server.send(404, "text/plain", "no image"); });
   route("/api/delete", HTTP_POST, handleDelete);
   route("/api/wifi", HTTP_POST, handleWifi);
+  route("/api/scan", HTTP_GET, handleScan);
   route("/api/netinfo", HTTP_POST, [] { renderNetInfo(); ok(); });
   route("/api/redraw", HTTP_POST, [] { showPage(curPage) ? ok() : server.send(404, "text/plain", "no image"); });
+  route("/api/stop", HTTP_POST, [] { stopAnim(); ok(); });  // 停在目前這格
   route("/api/clear", HTTP_POST, [] {
+    stopAnim();
     display.setFullWindow();
     display.fillScreen(GxEPD_WHITE);
     display.display(false);
@@ -478,6 +672,7 @@ void setupInputs(bool fromSleep) {
 
 // ---------- 省電 ----------
 void goToSleep() {
+  stopAnim();
   Serial.println("idle, deep sleep (press BOOT or the knob to wake)");
   led(0, 0, 0);
   display.hibernate();
@@ -527,7 +722,8 @@ void setup() {
   setupServer();
   Serial.printf("AP: %s  http://%s\n", apSsid.c_str(), WiFi.softAPIP().toString().c_str());
 
-  // 電子紙斷電仍保留畫面，所以有存過圖就不重刷；第一次使用才印出連線資訊
+  // 電子紙斷電仍保留畫面，所以有存過圖就不重刷；動畫頁則接著播放；第一次使用才印出連線資訊
+  if (!fromSleep && pageType(curPage) == 2) startAnim(curPage);
   if (!anyImage()) {
     if (wifiSsid.length())
       for (int i = 0; i < 40 && WiFi.status() != WL_CONNECTED; i++) delay(250);
@@ -539,6 +735,21 @@ void setup() {
 void loop() {
   server.handleClient();
   pollInputs();
+  animTick();
+
+  // 連上區網時在序列埠印出 IP；還沒有任何圖時也更新螢幕上的連線資訊
+  static bool staUp = false;
+  if ((WiFi.status() == WL_CONNECTED) != staUp) {
+    staUp = !staUp;
+    if (staUp) {
+      Serial.printf("WiFi \"%s\" connected, open http://%s  or http://%s.local\n", wifiSsid.c_str(), WiFi.localIP().toString().c_str(), MDNS_NAME);
+      // 剛從網頁改 Wi-Fi，或還沒有任何圖：把區網 IP 印在電子紙上（手機切回區網後照著開）
+      if (showIpWhenConnected || !anyImage()) renderNetInfo();
+      showIpWhenConnected = false;
+    } else {
+      Serial.println("WiFi disconnected");
+    }
+  }
 
   static uint32_t lastTry = 0;  // 斷線時每 30 秒重試
   if (wifiSsid.length() && WiFi.status() != WL_CONNECTED && millis() - lastTry > 30000) {

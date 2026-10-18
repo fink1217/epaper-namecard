@@ -20,7 +20,7 @@ from build_web import bundle  # noqa: E402
 
 OUT = pathlib.Path(__file__).resolve().parent / "out"
 MAX_PAGES = 8
-STATE = {"layouts": {}, "images": {}, "cur": 0, "ssid": ""}
+STATE = {"layouts": {}, "images": {}, "anims": {}, "cur": 0, "ssid": ""}
 
 
 def write_png(path, w, h, bits):
@@ -56,6 +56,16 @@ class Handler(BaseHTTPRequestHandler):
         return int(v) if v is not None else STATE["cur"]
 
     def show(self, page):
+        if page in STATE["anims"]:
+            a = STATE["anims"][page]
+            w, h, rot, n = a[4] | a[5] << 8, a[6] | a[7] << 8, a[8], a[9] | a[10] << 8
+            fb = (w + 7) // 8 * h
+            OUT.mkdir(exist_ok=True)
+            for i in range(min(n, 4)):  # 存前 4 格方便檢查
+                write_png(OUT / f"anim{i}.png", w, h, a[16 + i * fb:16 + (i + 1) * fb])
+            STATE["cur"] = page
+            print(f"[anim] page {page + 1}: {n} frames {w}x{h} rot={rot} interval={a[11] | a[12] << 8}ms full={a[13]}")
+            return
         w, h, rot, bits = STATE["images"][page]
         OUT.mkdir(exist_ok=True)
         write_png(OUT / "screen.png", w, h, bits)
@@ -73,8 +83,19 @@ class Handler(BaseHTTPRequestHandler):
             w, h = self.panel
             return self.send(200, json.dumps({
                 "panel": f"模擬 {w}x{h}", "ver": "dev", "ap": "EPaper-Card-DEV", "apip": "192.168.4.1",
-                "ssid": STATE["ssid"], "staip": "", "w": w, "h": h, "sleepMin": 0, "button": 0, "encoder": [3, 4, 5], "cur": STATE["cur"],
-                "pages": [1 if i in STATE["images"] else 0 for i in range(MAX_PAGES)], "fsFree": 1400000}), "application/json")
+                "ssid": STATE["ssid"], "w": w, "h": h, "sleepMin": 0, "button": 0, "encoder": [3, 4, 5], "cur": STATE["cur"],
+                "pages": [2 if i in STATE["anims"] else 1 if i in STATE["images"] else 0 for i in range(MAX_PAGES)],
+                "sta": "connected" if STATE["ssid"] else "none", "staip": "192.168.1.88" if STATE["ssid"] else "",
+                "playing": STATE["cur"] if STATE["cur"] in STATE["anims"] else -1, "partial": 1,
+                "fsFree": 1400000 - sum(len(a) for a in STATE["anims"].values()), "fsTotal": 1400000}), "application/json")
+        if p == "/api/scan":
+            return self.send(200, json.dumps([{"ssid": "BlackHole Creative", "rssi": -52, "lock": 1},
+                                               {"ssid": "Guest", "rssi": -70, "lock": 0}]), "application/json")
+        if p == "/api/anim":
+            page = self.page(parse_qs(urlparse(self.path).query))
+            if page not in STATE["anims"]:
+                return self.send(404, "no animation")
+            return self.send(200, STATE["anims"][page], "application/octet-stream")
         if p == "/api/layout":
             page = self.page(parse_qs(urlparse(self.path).query))
             if page not in STATE["layouts"]:
@@ -95,6 +116,19 @@ class Handler(BaseHTTPRequestHandler):
             if len(bits) != (w + 7) // 8 * h:
                 return self.send(400, "bad bitmap")
             STATE["images"][self.page(q)] = (w, h, rot, bits)
+            STATE["anims"].pop(self.page(q), None)
+            self.show(self.page(q))
+            return self.send(200, "ok")
+        if u.path == "/api/anim":
+            boundary = self.headers["Content-Type"].split("boundary=")[1].encode()
+            part = data.split(b"--" + boundary)[1]
+            a = part.split(b"\r\n\r\n", 1)[1].rsplit(b"\r\n", 1)[0]
+            w, h, rot, n = a[4] | a[5] << 8, a[6] | a[7] << 8, a[8] & 3, a[9] | a[10] << 8
+            ew, eh = (self.panel[1], self.panel[0]) if rot & 1 else self.panel
+            if a[:4] != b"EPA1" or (w, h) != (ew, eh) or len(a) != 16 + (w + 7) // 8 * h * n:
+                return self.send(400, "bad animation file (size mismatch?)")
+            STATE["anims"][self.page(q)] = a
+            STATE["images"].pop(self.page(q), None)
             self.show(self.page(q))
             return self.send(200, "ok")
         if u.path == "/api/layout":
@@ -109,22 +143,23 @@ class Handler(BaseHTTPRequestHandler):
             STATE["ssid"] = parse_qs(data.decode()).get("ssid", [""])[0]
             return self.send(200, "ok")
         if u.path == "/api/show":
-            if self.page(q) not in STATE["images"]:
+            if self.page(q) not in STATE["images"] and self.page(q) not in STATE["anims"]:
                 return self.send(404, "no image on this page")
             self.show(self.page(q))
             return self.send(200, "ok")
         if u.path == "/api/next":
             for i in range(1, MAX_PAGES + 1):
                 p = (STATE["cur"] + i) % MAX_PAGES
-                if p in STATE["images"]:
+                if p in STATE["images"] or p in STATE["anims"]:
                     self.show(p)
                     return self.send(200, "ok")
             return self.send(404, "no image")
         if u.path == "/api/delete":
             STATE["images"].pop(self.page(q), None)
+            STATE["anims"].pop(self.page(q), None)
             STATE["layouts"].pop(self.page(q), None)
             return self.send(200, "ok")
-        if u.path in ("/api/netinfo", "/api/redraw", "/api/clear", "/api/reboot"):
+        if u.path in ("/api/netinfo", "/api/redraw", "/api/clear", "/api/reboot", "/api/stop"):
             return self.send(200, "ok")
         self.send(404, "not found")
 

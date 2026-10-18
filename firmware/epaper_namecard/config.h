@@ -73,4 +73,4 @@
 // 接電池隨身帶時建議改成 10，否則電池大概撐不到一天。
 #define SLEEP_AFTER_MIN 0
 
-#define FW_VERSION "2.2.0"
+#define FW_VERSION "2.3.0"

@@ -57,6 +57,18 @@ textarea{min-height:56px;resize:vertical}
 .mut{color:var(--mut);font-size:13px;line-height:1.6}
 #toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#111;color:#fff;padding:10px 16px;border-radius:9px;display:none;z-index:20;font-size:14px;max-width:90vw}
 .hide{display:none!important}
+#modebar{display:flex;justify-content:center;margin:0 0 8px}
+#modebar button{border-radius:0;padding:6px 14px;font-size:14px}
+#modebar button:first-child{border-radius:8px 0 0 8px}
+#modebar button:last-child{border-radius:0 8px 8px 0;border-left:0}
+#modebar button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+body.mode-anim .still-only{display:none!important}
+body:not(.mode-anim) .anim-only{display:none!important}
+#scanlist{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+#scanlist button{padding:6px 10px;font-size:13px}
+#wifistat{margin-top:8px}
+#wifistat a{color:var(--acc);font-weight:600}
+progress{width:100%;margin-top:8px}
 </style>
 </head>
 <body>
@@ -68,11 +80,12 @@ textarea{min-height:56px;resize:vertical}
 
 <div id="stageWrap">
   <div id="pagebar"></div>
+  <div id="modebar"><button id="modeStill" class="on">靜態版面</button><button id="modeAnim">動畫 / 影片</button></div>
   <div id="bezel"><div id="stage"><canvas id="cv"></canvas><div id="ov"></div></div></div>
   <div id="zoomline">縮放 <input type="range" id="zoom" min="1" max="6" step="0.5" value="3"> <span id="dims"></span></div>
 </div>
 
-<div class="tools">
+<div class="tools still-only">
   <button data-add="text">＋文字</button>
   <button data-add="image">＋圖片</button>
   <button data-add="qr">＋QR</button>
@@ -85,7 +98,7 @@ textarea{min-height:56px;resize:vertical}
 <input type="file" id="imgfile" accept="image/*" class="hide">
 <input type="file" id="layoutfile" accept="application/json,.json" class="hide">
 
-<section id="propsec">
+<section id="propsec" class="still-only">
   <h2 id="proptitle">屬性</h2>
   <div id="props"></div>
 </section>
@@ -94,7 +107,7 @@ textarea{min-height:56px;resize:vertical}
   <h2>送出</h2>
   <div class="row" style="margin-top:0">
     <button class="pri" id="send">送到電子紙</button>
-    <label class="c"><input type="checkbox" id="fast">快速刷新（較快、可能殘影）</label>
+    <label class="c still-only"><input type="checkbox" id="fast">快速刷新（較快、可能殘影）</label>
   </div>
   <div class="row">
     <button id="showpage">在螢幕顯示這張</button>
@@ -104,7 +117,43 @@ textarea{min-height:56px;resize:vertical}
   <div class="mut" style="margin-top:6px">上方數字是圖片編號（最多 8 張）：<b>藍框</b>＝正在編輯、<b>灰底</b>＝已存圖、<b style="color:#22c55e">綠點</b>＝目前螢幕顯示、<b style="color:var(--sel)">*</b>＝有未送出的修改。裝置上<b>轉旋鈕</b>切換上一張/下一張（連轉幾格跳幾張），<b>按旋鈕</b>回到第 1 張；<b>BOOT 鍵</b>短按切下一張。兩者長按 2 秒都會顯示連線資訊。<br>送出時會一併把版面存到裝置上，之後用任何手機連上都能繼續編輯。所有影像運算都在這台裝置的瀏覽器完成。</div>
 </section>
 
-<section>
+<section class="anim-only" id="animsec">
+  <h2>動畫 / 影片</h2>
+  <div class="mut">選一段影片，或多張圖片當定格動畫。影格擷取、縮放、轉黑白都在這支手機/電腦上運算，再一次傳給裝置播放。</div>
+  <div class="row">
+    <button id="pickVideo">選擇影片</button>
+    <button id="pickFrames">選擇多張圖片（定格動畫）</button>
+  </div>
+  <input type="file" id="videofile" accept="video/*" class="hide">
+  <input type="file" id="framefiles" accept="image/*" multiple class="hide">
+  <div class="mut" id="animsrc" style="margin-top:6px">尚未選擇來源</div>
+  <progress id="animprog" class="hide" max="1" value="0"></progress>
+  <div class="grid" style="margin-top:10px">
+    <label class="f">方向<select id="arot">
+      <option value="1">橫向</option><option value="3">橫向（倒轉 180°）</option>
+      <option value="0">直向</option><option value="2">直向（倒轉 180°）</option></select></label>
+    <label class="f">畫面填法<select id="afit"><option value="cover">填滿（裁切邊緣）</option><option value="contain">完整（留白邊）</option></select></label>
+    <label class="f vid-only">從第幾秒開始<input id="astart" type="number" min="0" step="0.5" value="0"></label>
+    <label class="f vid-only">擷取長度（秒）<input id="adur" type="number" min="0.5" step="0.5" value="10"></label>
+    <label class="f">每秒幾格<select id="afps">
+      <option value="0.5">0.5</option><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
+    <label class="f">每幾格全刷一次（清殘影，0＝不全刷）<input id="afull" type="number" min="0" max="255" value="20"></label>
+    <label class="f">轉換方式<select id="amode">
+      <option value="bayer">Bayer 規則網點（動畫推薦，不閃爍）</option><option value="atkinson">抖色 Atkinson</option>
+      <option value="floyd">抖色 Floyd–Steinberg</option><option value="threshold">黑白門檻</option></select></label>
+    <label class="f">門檻 / 偏移<input id="athr" type="range" min="1" max="254" value="128"></label>
+    <label class="f">亮度<input id="abright" type="range" min="-128" max="128" value="0"></label>
+    <label class="f">對比<input id="acontrast" type="range" min="-128" max="128" value="0"></label>
+    <label class="c"><input type="checkbox" id="ainvert">負片</label>
+  </div>
+  <div class="row">
+    <button id="aextract">重新擷取影格</button>
+    <button id="aplay">⏸ 暫停預覽</button>
+  </div>
+  <div class="mut" id="animinfo" style="margin-top:6px"></div>
+</section>
+
+<section class="still-only">
   <h2>版面</h2>
   <div class="grid">
     <label class="f">方向<select id="rot">
@@ -121,19 +170,23 @@ textarea{min-height:56px;resize:vertical}
   </div>
 </section>
 
-<section>
+<section class="still-only">
   <h2>圖層（上面的會蓋住下面）</h2>
   <ul id="layers"></ul>
 </section>
 
 <section>
-  <h2>Wi-Fi 連線（選填）</h2>
-  <div class="mut">裝置會一直開著熱點「<b id="apname">-</b>」。填入家裡/公司的 Wi-Fi 後，同網路下也能用 <b>http://epaper.local</b> 開啟本頁。</div>
+  <h2>連上區網 Wi-Fi</h2>
+  <div class="mut">裝置一直開著熱點「<b id="apname">-</b>」。在這裡選擇區網並填密碼，裝置會立刻重新連線；連上後區網 IP 會顯示在下方和<b>電子紙上</b>。
+    手機切回同一個區網後，用瀏覽器開那個 IP（或 <b>http://epaper.local</b>）就能編輯。只支援 2.4GHz Wi-Fi。</div>
+  <div class="row"><button id="scan">掃描附近 Wi-Fi</button></div>
+  <div id="scanlist"></div>
   <div class="grid" style="margin-top:8px">
-    <label class="f">Wi-Fi 名稱 (SSID)<input id="ssid" maxlength="32"></label>
+    <label class="f">Wi-Fi 名稱 (SSID)<input id="ssid" maxlength="32" autocomplete="off"></label>
     <label class="f">密碼<input id="pass" type="password" maxlength="64" placeholder="不變更請留空"></label>
   </div>
-  <div class="row"><button id="wifisave">儲存並重新連線</button></div>
+  <div class="row"><button class="pri" id="wifisave">儲存並重新連線</button></div>
+  <div class="mut" id="wifistat"></div>
 </section>
 
 <section>
@@ -189,6 +242,7 @@ let selId = null, nid = 1;
 let undoStack = [], redoStack = [], editSnap = null;
 let zoom = 3;
 let editPage = 0, pageDirty = false;
+let pageMode = 'still';  // 'still' 靜態版面 / 'anim' 動畫
 const pageDocs = {};   // 這次開啟期間編輯過的頁：{rot,bg,items,dirty}
 const MAXP = () => (dev.pages && dev.pages.length) || 8;
 
@@ -242,10 +296,18 @@ function getImg(src) {
   return im.complete && im.naturalWidth ? im : null;
 }
 
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 function ditherGray(g, w, h, mode, thr) {
   // g: Float32Array 灰階 0..255，就地轉成 0 或 255
   if (mode === 'threshold') { for (let i = 0; i < g.length; i++) g[i] = g[i] < thr ? 0 : 255; return; }
   const bias = thr - 128;
+  if (mode === 'bayer') { // 規則網點：每格結果固定，動畫不會閃
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      g[i] = (g[i] - bias) < (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) * 16 ? 0 : 255;
+    }
+    return;
+  }
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = y * w + x, o = g[i], n = (o - bias) < 128 ? 0 : 255, e = o - n;
     g[i] = n;
@@ -384,6 +446,7 @@ function render() {
 function renderNow() {
   const w = W(), h = H();
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; layoutStage(); }
+  if (pageMode === 'anim') { drawAnimFrame(w, h); ov.innerHTML = ''; return; }
   renderBW(ctx, w, h);
   drawOverlay();
 }
@@ -621,7 +684,7 @@ function renderProps() {
       g.append(
         field('寬', 'w', 'number', {...num({min: 1}), refill: true, apply: (t, v) => { if (t.keep) t.h = Math.max(1, Math.round(v * t.h / t.w)); t.w = Math.max(1, v); }}),
         field('高', 'h', 'number', {...num({min: 1}), refill: true, apply: (t, v) => { if (t.keep) t.w = Math.max(1, Math.round(v * t.w / t.h)); t.h = Math.max(1, v); }}),
-        field('轉換方式', 'mode', 'select', {options: [['atkinson', '抖色 Atkinson（照片推薦）'], ['floyd', '抖色 Floyd–Steinberg'], ['threshold', '黑白門檻（Logo/文字圖）']]}),
+        field('轉換方式', 'mode', 'select', {options: [['atkinson', '抖色 Atkinson（照片推薦）'], ['floyd', '抖色 Floyd–Steinberg'], ['bayer', 'Bayer 規則網點'], ['threshold', '黑白門檻（Logo/文字圖）']]}),
         field('門檻 / 偏移', 'thr', 'range', {attrs: {min: 1, max: 254}}),
         field('亮度', 'bright', 'range', {attrs: {min: -128, max: 128}}),
         field('對比', 'contrast', 'range', {attrs: {min: -128, max: 128}}),
@@ -700,7 +763,7 @@ function renderLayers() {
 function refreshAll() { render(); renderProps(); renderLayers(); }
 
 // ---------- 版面設定 ----------
-function syncDocUI() { $('#rot').value = doc.rot; $('#bg').value = doc.bg; }
+function syncDocUI() { $('#rot').value = doc.rot; $('#arot').value = doc.rot; $('#bg').value = doc.bg; }
 $('#rot').onchange = e => {
   const nr = Number(e.target.value);
   const swap = (nr & 1) !== (doc.rot & 1);
@@ -761,7 +824,8 @@ $('#clearall').onclick = () => {
 
 // ---------- 存檔 / 載入 ----------
 function layoutJSON() {
-  return JSON.stringify({app: 'epaper-card', version: 1, panel: {w: dev.w, h: dev.h}, rot: doc.rot, bg: doc.bg, items: doc.items.map(({id, ...r}) => r)});
+  return JSON.stringify({app: 'epaper-card', version: 1, panel: {w: dev.w, h: dev.h}, rot: doc.rot, bg: doc.bg, items: doc.items.map(({id, ...r}) => r),
+    mode: pageMode, anim: A.set});
 }
 function applyLayout(j) {
   if (!j || !Array.isArray(j.items)) throw new Error('版面檔格式不正確');
@@ -787,6 +851,7 @@ function scheduleSaveDraft() {
 }
 
 $('#send').onclick = async () => {
+  if (pageMode === 'anim') return sendAnim();
   const b = $('#send'); b.disabled = true;
   try {
     const w = W(), h = H(), c = document.createElement('canvas'); c.width = w; c.height = h;
@@ -814,9 +879,9 @@ $('#layoutfile').onchange = async e => {
 };
 
 // ---------- 多張圖片（頁） ----------
-function markSaved(shown) {
+function markSaved(shown, type = 1) {
   pageDirty = false;
-  if (shown) { if (dev.pages) dev.pages[editPage] = 1; dev.cur = editPage; }
+  if (shown) { if (dev.pages) dev.pages[editPage] = type; dev.cur = editPage; }
   renderPageBar();
 }
 function renderPageBar() {
@@ -825,7 +890,8 @@ function renderPageBar() {
   for (let p = 0; p < MAXP(); p++) {
     const dirty = p === editPage ? pageDirty : !!(pageDocs[p] && pageDocs[p].dirty);
     const cls = [dev.pages && dev.pages[p] ? 'has' : '', p === editPage ? 'edit' : '', dev.cur === p && !dev.offline ? 'cur' : '', dirty ? 'dirty' : ''].join(' ');
-    const b = el('button', {class: cls, title: `第 ${p + 1} 張`}, String(p + 1));
+    const isAnim = dev.pages && dev.pages[p] === 2;
+    const b = el('button', {class: cls, title: `第 ${p + 1} 張${isAnim ? '（動畫）' : ''}`}, (isAnim ? '▶' : '') + (p + 1));
     b.onclick = () => switchPage(p);
     bar.append(b);
   }
@@ -835,24 +901,33 @@ async function loadPage(p) {
   const cached = pageDocs[p];
   if (cached) {
     doc = {rot: cached.rot, bg: cached.bg, items: cached.items}; pageDirty = cached.dirty;
+    pageMode = cached.mode; A = cached.anim;
   } else {
-    let loaded = false;
+    let j = null;
     if (!dev.offline) {
-      try { const r = await fetch(`/api/layout?page=${p}`); if (r.ok) { applyLayout(await r.json()); loaded = true; } } catch (e) {}
+      try { const r = await fetch(`/api/layout?page=${p}`); if (r.ok) j = await r.json(); } catch (e) {}
     }
-    if (!loaded) {
-      try { const d = localStorage.getItem('epaper-draft-' + p); if (d) { applyLayout(JSON.parse(d)); loaded = true; } } catch (e) {}
+    if (!j) {
+      try { const d = localStorage.getItem('epaper-draft-' + p); if (d) j = JSON.parse(d); } catch (e) {}
     }
-    if (!loaded) doc.items = p === 0 && !(dev.pages || []).some(Boolean) ? template().map(it => ({...it, id: nid++})) : [];
+    A = newAnim();
+    if (j) {
+      try { applyLayout(j); } catch (e) { j = null; }
+    }
+    if (!j) doc.items = p === 0 && !(dev.pages || []).some(Boolean) ? template().map(it => ({...it, id: nid++})) : [];
+    pageMode = (j && j.mode === 'anim') || (dev.pages && dev.pages[p] === 2) ? 'anim' : 'still';
+    if (j && j.anim) A.set = {...ANIM_DEFAULT, ...j.anim};
+    if (pageMode === 'anim' && dev.pages && dev.pages[p] === 2) await loadAnimFromDevice(p);
     pageDirty = false;
   }
+  setMode(pageMode, true);
   selId = null; procCache.clear(); syncDocUI(); updUndo(); layoutStage(); refreshAll(); renderPageBar();
 }
 async function switchPage(p) {
   if (p === editPage) return;
-  pageDocs[editPage] = {rot: doc.rot, bg: doc.bg, items: doc.items, dirty: pageDirty};
+  pageDocs[editPage] = {rot: doc.rot, bg: doc.bg, items: doc.items, dirty: pageDirty, mode: pageMode, anim: A};
   await loadPage(p);
-  if (!doc.items.length) toast(`第 ${p + 1} 張是空白的：加入素材，或按「套用名片範本」`);
+  if (pageMode === 'still' && !doc.items.length) toast(`第 ${p + 1} 張是空白的：加入素材、按「套用名片範本」，或切到「動畫 / 影片」`);
 }
 async function pageAction(path, msg) {
   try { await api(path, {method: 'POST'}); await loadInfo(); toast(msg); }
@@ -868,9 +943,292 @@ $('#delpage').onclick = async () => {
     delete pageDocs[editPage];
     await loadInfo();
     doc.items = []; pageDirty = false; undoStack = []; redoStack = [];
+    A = newAnim(); setMode('still', true);
     selId = null; updUndo(); refreshAll(); renderPageBar();
     toast('已刪除');
   } catch (e) { toast('失敗：' + e.message); }
+};
+
+// ---------- 動畫 / 影片 ----------
+// 影格擷取、縮放、轉黑白全部在瀏覽器完成；裝置只收最後的 1-bit 影格並用局部刷新輪播。
+const ANIM_DEFAULT = {fit: 'cover', start: 0, dur: 10, fps: 2, full: 20, mode: 'bayer', thr: 128, bright: 0, contrast: 0, invert: false};
+function newAnim() {
+  return {set: {...ANIM_DEFAULT}, src: null, gray: [], frames: [], idx: 0, playing: true, deviceBytes: 0};
+}
+let A = newAnim();
+let animTimer = null;
+
+function setMode(m, quiet) {
+  pageMode = m;
+  document.body.classList.toggle('mode-anim', m === 'anim');
+  $('#modeStill').classList.toggle('on', m === 'still');
+  $('#modeAnim').classList.toggle('on', m === 'anim');
+  if (m === 'anim') { selId = null; syncAnimUI(); }
+  restartAnimTimer();
+  layoutStage(); render();
+  if (!quiet && m === 'anim' && !A.frames.length) toast('選擇一段影片，或多張圖片做成定格動畫');
+}
+$('#modeStill').onclick = () => setMode('still');
+$('#modeAnim').onclick = () => setMode('anim');
+
+const frameBytes = () => ((W() + 7) >> 3) * H();
+function maxFrames() {
+  const avail = (dev.offline ? 1400000 : (dev.fsFree || 0)) + A.deviceBytes - 48 * 1024;
+  return Math.max(1, Math.min(600, Math.floor(avail / frameBytes())));
+}
+
+function drawAnimFrame(w, h) {
+  const f = A.frames.length ? A.frames[A.idx % A.frames.length] : null;
+  if (!f || f.length !== frameBytes()) {
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#000'; ctx.font = `${Math.max(10, Math.round(Math.min(w, h) / 10))}px sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(A.frames.length ? '方向改變了，請重新擷取' : '請選擇影片或圖片', w / 2, h / 2);
+    ctx.textAlign = 'left';
+    return;
+  }
+  const d = ctx.createImageData(w, h), p = d.data, rb = (w + 7) >> 3;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const v = (f[y * rb + (x >> 3)] & (0x80 >> (x & 7))) ? 0 : 255, i = (y * w + x) * 4;
+    p[i] = p[i + 1] = p[i + 2] = v; p[i + 3] = 255;
+  }
+  ctx.putImageData(d, 0, 0);
+}
+
+function restartAnimTimer() {
+  clearInterval(animTimer); animTimer = null;
+  if (pageMode !== 'anim') return;
+  animTimer = setInterval(() => {
+    if (pageMode !== 'anim' || !A.playing || A.frames.length < 2) return;
+    A.idx = (A.idx + 1) % A.frames.length;
+    renderNow();
+  }, Math.round(1000 / A.set.fps));
+}
+
+// 灰階影格 → 調整亮度/對比/負片 → 抖色 → 1-bit
+function processAnim() {
+  const w = W(), h = H(), st = A.set, rb = (w + 7) >> 3;
+  const cf = (259 * (st.contrast + 255)) / (255 * (259 - st.contrast));
+  A.frames = A.gray.map(src => {
+    const g = new Float32Array(src.length);
+    for (let i = 0; i < g.length; i++) {
+      let v = cf * (src[i] - 128) + 128 + st.bright;
+      if (st.invert) v = 255 - v;
+      g[i] = Math.max(0, Math.min(255, v));
+    }
+    ditherGray(g, w, h, st.mode, st.thr);
+    const out = new Uint8Array(rb * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++)
+      if (g[y * w + x] < 128) out[y * rb + (x >> 3)] |= 0x80 >> (x & 7);
+    return out;
+  });
+  A.idx = Math.min(A.idx, Math.max(0, A.frames.length - 1));
+  updateAnimInfo(); render();
+}
+
+function drawFit(c, src, sw, sh, w, h) {
+  c.fillStyle = '#fff'; c.fillRect(0, 0, w, h);
+  const k = A.set.fit === 'contain' ? Math.min(w / sw, h / sh) : Math.max(w / sw, h / sh);
+  const dw = sw * k, dh = sh * k;
+  c.imageSmoothingQuality = 'high';
+  c.drawImage(src, (w - dw) / 2, (h - dh) / 2, dw, dh);
+}
+function lumOf(c, w, h) {
+  const d = c.getImageData(0, 0, w, h).data, g = new Uint8Array(w * h);
+  for (let i = 0; i < g.length; i++) g[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+  return g;
+}
+function progress(v) {
+  const pr = $('#animprog');
+  pr.classList.toggle('hide', v === null); if (v !== null) pr.value = v;
+}
+function seekTo(v, t) {
+  return new Promise(res => {
+    if (Math.abs(v.currentTime - t) < 0.001 && v.readyState >= 2) return res();
+    const timer = setTimeout(res, 5000);
+    v.addEventListener('seeked', () => { clearTimeout(timer); res(); }, {once: true});
+    v.currentTime = t;
+  });
+}
+
+async function extractVideo(file) {
+  const w = W(), h = H(), url = URL.createObjectURL(file);
+  const v = document.createElement('video');
+  v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+  try {
+    await new Promise((res, rej) => {
+      v.onloadeddata = res;
+      v.onerror = () => rej(new Error('無法讀取這個影片（格式不支援？建議 MP4 或 WebM）'));
+    });
+    const dur = isFinite(v.duration) ? v.duration : 0;
+    const st = Math.max(0, Math.min(A.set.start, Math.max(0, dur - 0.05)));
+    const end = Math.min(dur, st + A.set.dur), step = 1 / A.set.fps, lim = maxFrames();
+    const times = [];
+    for (let t = st; t < end - 1e-6; t += step) times.push(t);
+    if (!times.length) times.push(st);
+    const cut = times.length > lim;
+    times.length = Math.min(times.length, lim);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d', {willReadFrequently: true}), out = [];
+    for (let i = 0; i < times.length; i++) {
+      await seekTo(v, times[i]);
+      drawFit(x, v, v.videoWidth, v.videoHeight, w, h);
+      out.push(lumOf(x, w, h));
+      progress((i + 1) / times.length);
+    }
+    return {gray: out, info: `影片 ${dur.toFixed(1)} 秒，擷取 ${st.toFixed(1)}–${Math.min(end, st + times.length * step).toFixed(1)} 秒`, cut};
+  } finally { URL.revokeObjectURL(url); v.removeAttribute('src'); v.load(); }
+}
+
+async function extractImages(files) {
+  const w = W(), h = H(), lim = maxFrames();
+  const list = [...files].sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true})).slice(0, lim);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d', {willReadFrequently: true}), out = [];
+  for (let i = 0; i < list.length; i++) {
+    const url = URL.createObjectURL(list[i]), im = new Image();
+    try {
+      await new Promise((res, rej) => { im.onload = res; im.onerror = () => rej(new Error('無法讀取圖片 ' + list[i].name)); im.src = url; });
+      drawFit(x, im, im.naturalWidth, im.naturalHeight, w, h);
+      out.push(lumOf(x, w, h));
+    } finally { URL.revokeObjectURL(url); }
+    progress((i + 1) / list.length);
+  }
+  return {gray: out, info: '依檔名排序', cut: files.length > lim};
+}
+
+let extracting = false;
+async function extract() {
+  if (!A.src || extracting) return;
+  extracting = true; $('#aextract').disabled = true; progress(0);
+  try {
+    const r = A.src.kind === 'video' ? await extractVideo(A.src.file) : await extractImages(A.src.files);
+    A.gray = r.gray; A.idx = 0; A.srcInfo = r.info;
+    processAnim();
+    pageDirty = true; renderPageBar();
+    if (r.cut) toast(`超過裝置儲存空間，只保留前 ${r.gray.length} 格`, 4000);
+  } catch (e) { toast(e.message, 4000); }
+  extracting = false; $('#aextract').disabled = false; progress(null);
+}
+
+function updateAnimInfo() {
+  const n = A.frames.length, kb = Math.round((16 + n * frameBytes()) / 1024);
+  $('#animsrc').textContent = A.src ? `來源：${A.src.name}${A.srcInfo ? '（' + A.srcInfo + '）' : ''}` :
+    (A.deviceBytes ? '來源：裝置上已存的動畫（要調整轉換方式請重新選擇影片或圖片）' : '尚未選擇來源');
+  $('#animinfo').innerHTML = n ? `共 <b>${n}</b> 格，約 <b>${kb} KB</b>（最多可存約 ${maxFrames()} 格）。預覽：每秒 ${A.set.fps} 格。<br>` +
+    (dev.partial === 0 ? '這個面板不支援局部刷新，每格都會全刷（約 2–3 秒一格）。' :
+      '電子紙局部刷新約 0.3–0.6 秒一格，實際播放可能比預覽慢；每 ' + (A.set.full || '∞') + ' 格全刷一次清殘影（會閃一下）。') : '';
+  $('#aplay').textContent = A.playing ? '⏸ 暫停預覽' : '▶ 播放預覽';
+}
+
+function syncAnimUI() {
+  const st = A.set;
+  $('#arot').value = doc.rot; $('#afit').value = st.fit; $('#astart').value = st.start; $('#adur').value = st.dur;
+  $('#afps').value = String(st.fps); $('#afull').value = st.full; $('#amode').value = st.mode;
+  $('#athr').value = st.thr; $('#abright').value = st.bright; $('#acontrast').value = st.contrast; $('#ainvert').checked = st.invert;
+  document.querySelectorAll('.vid-only').forEach(e => e.classList.toggle('hide', !!A.src && A.src.kind !== 'video'));
+  updateAnimInfo();
+}
+
+$('#pickVideo').onclick = () => $('#videofile').click();
+$('#pickFrames').onclick = () => $('#framefiles').click();
+$('#videofile').onchange = e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  A.src = {kind: 'video', file: f, name: f.name}; syncAnimUI(); extract();
+};
+$('#framefiles').onchange = e => {
+  const fs = [...e.target.files]; e.target.value = ''; if (!fs.length) return;
+  A.src = {kind: 'images', files: fs, name: fs.length === 1 ? fs[0].name : `${fs.length} 張圖片`}; syncAnimUI(); extract();
+};
+let reextractT = null;
+const reextractSoon = () => { clearTimeout(reextractT); reextractT = setTimeout(extract, 400); };
+const animSet = (id, key, num, after) => {
+  $(id).addEventListener(num === 'check' ? 'change' : 'input', e => {
+    A.set[key] = num === 'check' ? e.target.checked : num ? Number(e.target.value) : e.target.value;
+    pageDirty = true; renderPageBar(); after();
+  });
+};
+const reprocess = () => { if (A.gray.length) processAnim(); };
+animSet('#afit', 'fit', false, reextractSoon);
+animSet('#astart', 'start', true, reextractSoon);
+animSet('#adur', 'dur', true, reextractSoon);
+animSet('#afps', 'fps', true, () => { restartAnimTimer(); updateAnimInfo(); reextractSoon(); });
+animSet('#afull', 'full', true, updateAnimInfo);
+animSet('#amode', 'mode', false, reprocess);
+animSet('#athr', 'thr', true, reprocess);
+animSet('#abright', 'bright', true, reprocess);
+animSet('#acontrast', 'contrast', true, reprocess);
+animSet('#ainvert', 'invert', 'check', reprocess);
+$('#arot').onchange = e => {
+  doc.rot = Number(e.target.value); syncDocUI(); layoutStage();
+  pageDirty = true; renderPageBar();
+  if (A.src) extract(); else render();
+};
+$('#aextract').onclick = () => A.src ? extract() : toast('先選擇影片或圖片');
+$('#aplay').onclick = () => { A.playing = !A.playing; updateAnimInfo(); };
+
+async function loadAnimFromDevice(p) {
+  try {
+    const r = await fetch(`/api/anim?page=${p}`);
+    if (!r.ok) return;
+    const b = new Uint8Array(await r.arrayBuffer());
+    if (String.fromCharCode(b[0], b[1], b[2], b[3]) !== 'EPA1') return;
+    const w = b[4] | (b[5] << 8), h = b[6] | (b[7] << 8), rot = b[8] & 3, n = b[9] | (b[10] << 8);
+    const fb = ((w + 7) >> 3) * h;
+    doc.rot = rot; syncDocUI();
+    A.frames = [];
+    for (let i = 0; i < n; i++) A.frames.push(b.slice(16 + i * fb, 16 + (i + 1) * fb));
+    A.deviceBytes = b.length;
+  } catch (e) {}
+}
+
+async function sendAnim() {
+  if (!A.frames.length) return toast('還沒有影格：先選擇影片或圖片');
+  const w = W(), h = H(), fb = frameBytes(), n = A.frames.length;
+  if (A.frames[0].length !== fb) return toast('方向改變了，請重新擷取影格');
+  const buf = new Uint8Array(16 + n * fb), iv = Math.round(1000 / A.set.fps);
+  buf.set([0x45, 0x50, 0x41, 0x31, w & 255, w >> 8, h & 255, h >> 8, doc.rot, n & 255, n >> 8, iv & 255, iv >> 8, Math.min(255, A.set.full | 0)]);
+  A.frames.forEach((f, i) => buf.set(f, 16 + i * fb));
+  const b = $('#send'); b.disabled = true;
+  try {
+    toast(`上傳 ${n} 格（${Math.round(buf.length / 1024)} KB）中…`, 15000);
+    const fd = new FormData();
+    fd.append('file', new Blob([buf], {type: 'application/octet-stream'}), 'anim.bin');
+    await api(`/api/anim?page=${editPage}`, {method: 'POST', body: fd});
+    await saveLayout();
+    A.deviceBytes = buf.length;
+    markSaved(true, 2);
+    loadInfo();
+    toast(`已開始在電子紙播放（第 ${editPage + 1} 頁）`);
+  } catch (e) { toast('失敗：' + e.message, 5000); }
+  b.disabled = false;
+}
+
+// ---------- 區網 Wi-Fi ----------
+const STA_TEXT = {none: '尚未設定區網', connecting: '連線中…', nossid: '找不到這個網路（名稱錯誤、太遠，或不是 2.4GHz）', failed: '連線失敗（多半是密碼錯誤）'};
+function staLine() {
+  if (dev.offline) return '';
+  if (dev.sta === 'connected' && dev.staip)
+    return `✅ 已連上「${esc(dev.ssid)}」：<a href="http://${dev.staip}/">http://${dev.staip}</a>（手機切到同一個 Wi-Fi 後開這個網址，或用 http://epaper.local）`;
+  return (dev.ssid ? `「${esc(dev.ssid)}」：` : '') + (STA_TEXT[dev.sta] || '');
+}
+function esc(t) { return String(t).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c])); }
+
+$('#scan').onclick = async () => {
+  const b = $('#scan'); b.disabled = true; b.textContent = '掃描中…';
+  try {
+    const list = await (await api('/api/scan')).json();
+    const seen = new Set(), box = $('#scanlist'); box.innerHTML = '';
+    list.sort((a, b) => b.rssi - a.rssi).forEach(n => {
+      if (seen.has(n.ssid)) return; seen.add(n.ssid);
+      const bars = n.rssi > -55 ? '▂▄▆█' : n.rssi > -67 ? '▂▄▆' : n.rssi > -78 ? '▂▄' : '▂';
+      const btn = el('button', {}, `${n.lock ? '🔒 ' : ''}${n.ssid}  ${bars}`);
+      btn.onclick = () => { $('#ssid').value = n.ssid; $('#pass').value = ''; $('#pass').focus(); };
+      box.append(btn);
+    });
+    if (!seen.size) box.append(el('span', {class: 'mut'}, '沒有找到 Wi-Fi'));
+  } catch (e) { toast('掃描失敗：' + e.message); }
+  b.disabled = false; b.textContent = '掃描附近 Wi-Fi';
 };
 
 // ---------- 裝置 ----------
@@ -878,8 +1236,9 @@ function showDev() {
   $('#devline').textContent = dev.offline ? '離線預覽（未連上裝置）' : `${dev.panel} · ${dev.staip || dev.apip}`;
   $('#apname').textContent = dev.ap || '-';
   if (document.activeElement !== $('#ssid')) $('#ssid').value = dev.ssid || '';
+  $('#wifistat').innerHTML = staLine();
   $('#devinfo').innerHTML = dev.offline ? '未連上裝置' :
-    `面板：${dev.panel}（${dev.w}×${dev.h}）<br>熱點：${dev.ap}（${dev.apip}）<br>Wi-Fi：${dev.staip ? dev.ssid + '（' + dev.staip + '）' : '未連線'}<br>` +
+    `面板：${dev.panel}（${dev.w}×${dev.h}）<br>熱點：${esc(dev.ap)}（${dev.apip}）<br>區網：${dev.staip ? esc(dev.ssid) + '（' + dev.staip + '）' : (STA_TEXT[dev.sta] || '未連線')}<br>` +
     `儲存空間剩餘：${Math.round(dev.fsFree / 1024)} KB<br>旋鈕：CLK GP${(dev.encoder || [])[0]}、DT GP${(dev.encoder || [])[1]}、SW GP${(dev.encoder || [])[2]}；BOOT 鍵 GP${dev.button}<br>閒置 ${dev.sleepMin || '∞'} 分鐘後休眠（按旋鈕或 BOOT 喚醒並換圖）<br>韌體：${dev.ver}`;
 }
 async function loadInfo() {
@@ -888,10 +1247,23 @@ async function loadInfo() {
   showDev(); renderPageBar();
 }
 $('#wifisave').onclick = async () => {
+  const ssid = $('#ssid').value.trim();
   try {
-    await api('/api/wifi', {method: 'POST', body: new URLSearchParams({ssid: $('#ssid').value, pass: $('#pass').value})});
-    $('#pass').value = ''; toast('已儲存，正在重新連線…'); setTimeout(loadInfo, 8000);
-  } catch (e) { toast('失敗：' + e.message); }
+    await api('/api/wifi', {method: 'POST', body: new URLSearchParams({ssid, pass: $('#pass').value})});
+  } catch (e) { return toast('失敗：' + e.message); }
+  $('#pass').value = '';
+  if (!ssid) { toast('已清除區網設定'); return loadInfo(); }
+  $('#wifistat').textContent = `正在連線「${ssid}」…`;
+  // 每 2 秒查一次狀態，最多 30 秒。裝置連上區網時熱點可能換頻道，手機會短暫斷線，IP 也會顯示在電子紙上。
+  for (let i = 0; i < 15; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    try { dev = await (await api('/api/info')).json(); } catch (e) {
+      $('#wifistat').textContent = '手機和裝置的連線暫時中斷（裝置切換頻道時常見）。請重新連上熱點，或直接看電子紙上顯示的區網 IP。';
+      continue;
+    }
+    showDev();
+    if (dev.sta === 'connected' || dev.sta === 'failed' || dev.sta === 'nossid') break;
+  }
 };
 const devBtn = (id, path, msg, ask) => $(id).onclick = async () => {
   if (ask && !confirm(ask)) return;
