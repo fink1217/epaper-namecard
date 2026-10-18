@@ -27,6 +27,8 @@ ESP 只接收最後的 1-bit 點陣圖，負責存檔與刷新電子紙，所以
 
 只用到 SuperMini **右排**排針（USB 朝上時，由上往下是 5V、GND、3V3、13、12、11、10、9、8），跳過 5V 後，順序剛好和模組一樣，8 條線平行接過去就好：
 
+> ⚠️ 右排有 9 腳、模組只有 8 腳。用 8pin 排線時要**從 GND 開始對齊**，不要從最上面的 5V 開始，否則每條線都會錯一格：模組 GND 吃到 5V、VCC 接到地，等於電源反接。
+
 | 電子紙模組 | SuperMini | 用途 |
 |---|---|---|
 | GND  | GND  | |
@@ -90,7 +92,7 @@ SuperMini 只有一組 3V3/GND 腳，已經給電子紙用了，所以編碼器�
 ## 燒錄
 
 1. 安裝 **Arduino IDE 2.x**。
-2. 開發板管理員安裝 **esp32 by Espressif Systems 3.x**（已用 3.0.7 編譯驗證）。
+2. 開發板管理員安裝 **esp32 by Espressif Systems 3.x**（已用 3.0.7、3.3.8 驗證）。
 3. 程式庫管理員安裝 **GxEPD2**（會自動帶入 Adafruit GFX）。
 4. 開啟 `firmware/epaper_namecard/epaper_namecard.ino`，在 `config.h` 選擇面板型號（見下節）。
 5. 工具選單：
@@ -101,6 +103,9 @@ SuperMini 只有一組 3V3/GND 腳，已經給電子紙用了，所以編碼器�
    | USB CDC On Boot | **Enabled**（序列埠訊息才會從 USB 輸出） |
    | Flash Size | **4MB (32Mb)** |
    | Partition Scheme | **Default 4MB with spiffs (1.2MB APP/1.5MB SPIFFS)** |
+   | PSRAM | **Disabled**（韌體用不到；**不要選 OPI PSRAM**） |
+
+   Arduino IDE 會記住每塊開發板上次的選項。如果你曾用「ESP32S3 Dev Module」燒過 16MB Flash / OPI PSRAM 的板子，燒錄前務必改回上表的設定。
 
 6. 上傳。如果上傳失敗：按住 **BOOT**，按一下 **RESET**，放開 BOOT，再上傳一次。
 
@@ -111,11 +116,11 @@ SuperMini 只有一組 3V3/GND 腳，已經給電子紙用了，所以編碼器�
 | `config.h` | 尺寸 / 解析度 | 驅動 IC | 常見料號 |
 |---|---|---|---|
 | `PANEL_213`     | 2.13" 122×250 | SSD1680 | GDEY0213B74、「V4」 |
-| `PANEL_266`     | 2.66" 152×296 | SSD1680 | GDEY0266T90 |
-| `PANEL_290_V2`（預設） | 2.9" 128×296 | SSD1680 | GDEY029T94、「V2」 |
+| `PANEL_266`（預設） | 2.66" 152×296 | SSD1680 | GDEY0266T90 |
+| `PANEL_290_V2`  | 2.9" 128×296 | SSD1680 | GDEY029T94、「V2」 |
 | `PANEL_290_OLD` | 2.9" 128×296 | IL3820  | GDEH029A1、「V1」 |
 
-選錯時會畫面偏移、只顯示一部分，或有雜點和嚴重殘影。換一個型號重燒即可。編輯器會自動依面板解析度調整畫布。
+選錯時會畫面偏移、只顯示一部分，或有雜點和嚴重殘影。長邊多一條像 QR 碼的亂碼，代表面板比選的型號寬（例如 2.66" 選成 2.9"）。換一個型號重燒即可。編輯器會自動依面板解析度調整畫布。
 
 ## 使用
 
@@ -139,14 +144,17 @@ SuperMini 只有一組 3V3/GND 腳，已經給電子紙用了，所以編碼器�
    - 沒有 → 韌體沒燒進去或沒啟動：確認上傳成功，按一下 RESET。
    - 有 → ESP 正常，問題在電子紙（接線或型號），往下看。
 2. **檢查接線**：VCC 接 **3V3**（不是 5V）；SCL→13、SDA→12 沒有對調；GND 確實接上；杜邦線插緊（可以換一條試試）。
-3. **找出正確的面板型號**：燒錄 `firmware/panel_test/panel_test.ino`，它會每 10 秒換一種驅動，畫出大大的編號 1–8。
+3. **用探針確認接線**：燒錄 `firmware/epd_probe/epd_probe.ino`（不需要任何程式庫），開序列埠監控（115200）。
+   它會逐段檢查電源、BUSY、SPI 各條線與控制器種類，最後直接全刷一次；序列埠的「結論」會指出哪一段有問題。
+   畫面出現一半黑、一半白，代表接線和面板都正常，問題只在型號，往下一步。
+4. **找出正確的面板型號**：燒錄 `firmware/panel_test/panel_test.ino`，它會每 10 秒換一種驅動，畫出大大的編號 1–8。
    看哪個編號的畫面完整清楚，就在 `config.h` 選對應的型號，再燒回主韌體：
 
    | 編號 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
    |---|---|---|---|---|---|---|---|---|
    | config.h | `PANEL_290_V2` | `PANEL_213` | `PANEL_266` | `PANEL_290_OLD` | `PANEL_213_B74` | `PANEL_213_B73` | `PANEL_290_BS` | `PANEL_290_T5` |
 
-4. **看序列埠訊息**（Arduino IDE 序列埠監控視窗，115200）：
+5. **看序列埠訊息**（Arduino IDE 序列埠監控視窗，115200）：
    - 出現 `Busy Timeout!`：面板沒有回應，通常是接線問題或型號不對。
    - 每次刷新只花幾十毫秒：指令沒送到面板，請檢查 SCL/SDA/CS/DC 這幾條線。
 
@@ -194,6 +202,7 @@ web/index.html          編輯器原始碼
 web/vendor/qrcode.js    QR Code 產生器（Kazuhiko Arase, MIT）
 tools/build_web.py      產生 web_ui.h
 tools/dev_server.py     本機模擬伺服器
+firmware/epd_probe/     接線探針（不需程式庫，逐段檢查接線與控制器）
 firmware/panel_test/    面板型號測試程式（沒畫面時用）
 docs/wiring.svg         接線圖
 ```
