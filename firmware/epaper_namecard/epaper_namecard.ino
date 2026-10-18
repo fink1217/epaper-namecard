@@ -39,6 +39,18 @@
 #elif defined(PANEL_290_OLD)
   #define EPD_DRIVER GxEPD2_290
   #define PANEL_NAME "2.9in 128x296 IL3820"
+#elif defined(PANEL_213_B74)
+  #define EPD_DRIVER GxEPD2_213_B74
+  #define PANEL_NAME "2.13in 122x250 SSD1680 B74"
+#elif defined(PANEL_213_B73)
+  #define EPD_DRIVER GxEPD2_213_B73
+  #define PANEL_NAME "2.13in 122x250 SSD1675B"
+#elif defined(PANEL_290_BS)
+  #define EPD_DRIVER GxEPD2_290_BS
+  #define PANEL_NAME "2.9in 128x296 SSD1680 BS"
+#elif defined(PANEL_290_T5)
+  #define EPD_DRIVER GxEPD2_290_T5
+  #define PANEL_NAME "2.9in 128x296 UC8151D"
 #else
   #error "請在 config.h 選擇一種面板"
 #endif
@@ -498,7 +510,7 @@ void setup() {
   migrateOldFiles();
 
   SPI.begin(EPD_SCK, -1, EPD_MOSI, EPD_CS);
-  display.init(115200, !fromSleep, 2, false);
+  display.init(115200, !fromSleep, 10, false);
 
   // 按按鈕喚醒 = 想看下一張，先換圖再開 Wi-Fi，反應比較快
   if (fromSleep) showNextPage();

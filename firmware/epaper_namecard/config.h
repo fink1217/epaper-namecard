@@ -7,6 +7,11 @@
 //   PANEL_266      2.66" 152x296  SSD1680  (GDEY0266T90)
 //   PANEL_290_V2   2.9"  128x296  SSD1680  (GDEY029T94 / "V2"，目前最常見)
 //   PANEL_290_OLD  2.9"  128x296  IL3820   (舊款 GDEH029A1 / "V1")
+//   PANEL_213_B74  2.13" 122x250  SSD1680  (GDEY0213B74 另一版驅動)
+//   PANEL_213_B73  2.13" 122x250  SSD1675B (舊款 "V3")
+//   PANEL_290_BS   2.9"  128x296  SSD1680  (DEPG0290BS)
+//   PANEL_290_T5   2.9"  128x296  UC8151D  (GDEW029T5)
+// 不確定是哪一種：先燒 firmware/panel_test，看哪個編號的畫面正確，再回來選。
 #define PANEL_290_V2
 
 // ---- 2. 腳位（ESP32-S3 SuperMini）----

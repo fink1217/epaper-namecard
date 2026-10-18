@@ -133,6 +133,23 @@ SuperMini 只有一組 3V3/GND 腳，已經給電子紙用了，所以編碼器�
 - 接電池隨身帶時，建議把 `SLEEP_AFTER_MIN` 改成 `10`：閒置 10 分鐘且沒有手機連著熱點時，會進入深度睡眠，按**旋鈕**或 **BOOT** 鍵喚醒（睡眠中轉動旋鈕不會喚醒）。
 - 這款 SuperMini 背面有電池焊盤（B+ / B−）和充電電路，可以接單顆鋰電池。
 
+## 沒有畫面？疑難排解
+
+1. **先看韌體有沒有在跑**：手機 Wi-Fi 清單有沒有出現 `EPaper-Card-XXXX`？
+   - 沒有 → 韌體沒燒進去或沒啟動：確認上傳成功，按一下 RESET。
+   - 有 → ESP 正常，問題在電子紙（接線或型號），往下看。
+2. **檢查接線**：VCC 接 **3V3**（不是 5V）；SCL→13、SDA→12 沒有對調；GND 確實接上；杜邦線插緊（可以換一條試試）。
+3. **找出正確的面板型號**：燒錄 `firmware/panel_test/panel_test.ino`，它會每 10 秒換一種驅動，畫出大大的編號 1–8。
+   看哪個編號的畫面完整清楚，就在 `config.h` 選對應的型號，再燒回主韌體：
+
+   | 編號 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+   |---|---|---|---|---|---|---|---|---|
+   | config.h | `PANEL_290_V2` | `PANEL_213` | `PANEL_266` | `PANEL_290_OLD` | `PANEL_213_B74` | `PANEL_213_B73` | `PANEL_290_BS` | `PANEL_290_T5` |
+
+4. **看序列埠訊息**（Arduino IDE 序列埠監控視窗，115200）：
+   - 出現 `Busy Timeout!`：面板沒有回應，通常是接線問題或型號不對。
+   - 每次刷新只花幾十毫秒：指令沒送到面板，請檢查 SCL/SDA/CS/DC 這幾條線。
+
 ## 在電腦上試用編輯器（不需要硬體）
 
 ```bash
@@ -177,6 +194,7 @@ web/index.html          編輯器原始碼
 web/vendor/qrcode.js    QR Code 產生器（Kazuhiko Arase, MIT）
 tools/build_web.py      產生 web_ui.h
 tools/dev_server.py     本機模擬伺服器
+firmware/panel_test/    面板型號測試程式（沒畫面時用）
 docs/wiring.svg         接線圖
 ```
 
