@@ -63,8 +63,9 @@
 #define MDNS_NAME      "epaper"     // http://epaper.local
 
 // ---- 4. 省電 ----
-// 沒有任何網頁/按鈕操作超過這麼多分鐘就進入深度睡眠（畫面保留），按按鈕喚醒。
-// 設 0 = 永不睡眠。接電池使用時建議保留。
-#define SLEEP_AFTER_MIN 10
+// 沒有任何網頁/按鈕操作超過這麼多分鐘就進入深度睡眠（畫面保留），按旋鈕或 BOOT 鍵喚醒。
+// 設 0 = 永不睡眠，Wi-Fi 一直開著，隨時都能用網頁控制（適合插 USB 長期使用）。
+// 接電池隨身帶時建議改成 10，否則電池大概撐不到一天。
+#define SLEEP_AFTER_MIN 0
 
 #define FW_VERSION "2.2.0"
