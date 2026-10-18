@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 480" font-family="Helvetica,Arial,sans-serif" font-size="14">
+  <rect width="960" height="480" fill="#ffffff"/>
+  <text x="480" y="30" text-anchor="middle" font-size="18" font-weight="bold" fill="#111">旋轉編碼器 ⇄ ESP32-S3 SuperMini ⇄ 電子紙模組 接線圖</text>
+  <text x="480" y="52" text-anchor="middle" font-size="12" fill="#555">SuperMini 正面朝上、USB 在上；電子紙接右排 8 腳、編碼器接左排最下面 5 腳，順序都剛好一一對應，平行接即可</text>
+
+  <!-- Rotary encoder KY-040 -->
+  <rect x="20" y="215" width="130" height="190" rx="8" fill="#111827"/>
+  <rect x="35" y="270" width="60" height="60" rx="4" fill="#9ca3af"/>
+  <circle cx="65" cy="300" r="16" fill="#d1d5db" stroke="#6b7280"/>
+  <text x="65" y="390" text-anchor="middle" fill="#e5e7eb" font-size="12">KY-040 旋鈕</text>
+  <g font-size="12" font-weight="bold" fill="#fff" text-anchor="end">
+    <text x="128" y="254">CLK</text><text x="128" y="284">DT</text><text x="128" y="314">SW</text><text x="128" y="344">+</text><text x="128" y="374">GND</text>
+  </g>
+  <g stroke-width="3">
+    <line x1="140" y1="250" x2="360" y2="250" stroke="#0891b2"/>
+    <line x1="140" y1="280" x2="360" y2="280" stroke="#db2777"/>
+    <line x1="140" y1="310" x2="360" y2="310" stroke="#65a30d"/>
+    <line x1="140" y1="340" x2="360" y2="340" stroke="#dc2626"/>
+    <line x1="140" y1="370" x2="360" y2="370" stroke="#111"/>
+  </g>
+  <g fill="#fbbf24">
+    <circle cx="140" cy="250" r="5"/><circle cx="140" cy="280" r="5"/><circle cx="140" cy="310" r="5"/><circle cx="140" cy="340" r="5"/><circle cx="140" cy="370" r="5"/>
+    <circle cx="360" cy="250" r="5"/><circle cx="360" cy="280" r="5"/><circle cx="360" cy="310" r="5"/><circle cx="360" cy="340" r="5"/><circle cx="360" cy="370" r="5"/>
+  </g>
+  <g fill="#374151" font-size="11" text-anchor="middle">
+    <text x="250" y="244">GP3</text><text x="250" y="274">GP4</text><text x="250" y="304">GP5</text><text x="250" y="334">GP6（當 3.3V）</text><text x="250" y="364">GP7（當 GND）</text>
+  </g>
+  <g transform="translate(200,0)">
+  <!-- SuperMini (top view) -->
+  <rect x="150" y="80" width="150" height="350" rx="8" fill="#1f2937"/>
+  <rect x="185" y="66" width="80" height="48" rx="4" fill="#9ca3af"/>
+  <text x="225" y="95" text-anchor="middle" fill="#111" font-size="11" font-weight="bold">USB-C</text>
+  <rect x="222" y="242" width="36" height="36" fill="#4b5563" transform="rotate(45 240 260)"/>
+  <text x="220" y="395" text-anchor="middle" fill="#e5e7eb" font-size="12">ESP32-S3</text>
+  <text x="220" y="411" text-anchor="middle" fill="#e5e7eb" font-size="12">SuperMini</text>
+  <!-- left column (unused) -->
+  <g fill="#9ca3af" font-size="11" text-anchor="start">
+    <text x="172" y="134">TX</text><text x="172" y="164">RX</text><text x="172" y="194">GP1</text><text x="172" y="224">GP2</text>
+    <text x="172" y="254">GP3</text><text x="172" y="284">GP4</text><text x="172" y="314">GP5</text><text x="172" y="344">GP6</text><text x="172" y="374">GP7</text>
+  </g>
+  <g fill="#d1d5db"><circle cx="160" cy="130" r="5"/><circle cx="160" cy="160" r="5"/><circle cx="160" cy="190" r="5"/><circle cx="160" cy="220" r="5"/><circle cx="160" cy="250" r="5"/><circle cx="160" cy="280" r="5"/><circle cx="160" cy="310" r="5"/><circle cx="160" cy="340" r="5"/><circle cx="160" cy="370" r="5"/></g>
+  <!-- right column labels (inside board) -->
+  <g fill="#fff" font-size="12" font-weight="bold" text-anchor="end">
+    <text x="280" y="134" fill="#9ca3af">5V</text>
+    <text x="280" y="164">GND</text><text x="280" y="194">3V3</text><text x="280" y="224">13</text><text x="280" y="254">12</text>
+    <text x="280" y="284">11</text><text x="280" y="314">10</text><text x="280" y="344">9</text><text x="280" y="374">8</text>
+  </g>
+  <circle cx="290" cy="130" r="5" fill="#d1d5db"/>
+
+  <!-- E-paper module (pins on its left edge, rotated view) -->
+  <rect x="500" y="110" width="210" height="300" rx="10" fill="#1e40af"/>
+  <rect x="590" y="130" width="105" height="260" fill="#e5e7eb" stroke="#cbd5e1"/>
+  <text x="642" y="265" text-anchor="middle" fill="#6b7280">E-Paper</text>
+
+  <g font-size="13" font-weight="bold">
+    <!-- y: 160 GND, 190 VCC, 220 SCL, 250 SDA, 280 RES, 310 DC, 340 CS, 370 BUSY -->
+    <line x1="290" y1="160" x2="510" y2="160" stroke="#111" stroke-width="3"/>
+    <line x1="290" y1="190" x2="510" y2="190" stroke="#dc2626" stroke-width="3"/>
+    <line x1="290" y1="220" x2="510" y2="220" stroke="#f59e0b" stroke-width="3"/>
+    <line x1="290" y1="250" x2="510" y2="250" stroke="#16a34a" stroke-width="3"/>
+    <line x1="290" y1="280" x2="510" y2="280" stroke="#2563eb" stroke-width="3"/>
+    <line x1="290" y1="310" x2="510" y2="310" stroke="#7c3aed" stroke-width="3"/>
+    <line x1="290" y1="340" x2="510" y2="340" stroke="#6b7280" stroke-width="3"/>
+    <line x1="290" y1="370" x2="510" y2="370" stroke="#a16207" stroke-width="3"/>
+    <g fill="#fbbf24">
+      <circle cx="290" cy="160" r="5"/><circle cx="290" cy="190" r="5"/><circle cx="290" cy="220" r="5"/><circle cx="290" cy="250" r="5"/>
+      <circle cx="290" cy="280" r="5"/><circle cx="290" cy="310" r="5"/><circle cx="290" cy="340" r="5"/><circle cx="290" cy="370" r="5"/>
+      <circle cx="510" cy="160" r="5"/><circle cx="510" cy="190" r="5"/><circle cx="510" cy="220" r="5"/><circle cx="510" cy="250" r="5"/>
+      <circle cx="510" cy="280" r="5"/><circle cx="510" cy="310" r="5"/><circle cx="510" cy="340" r="5"/><circle cx="510" cy="370" r="5"/>
+    </g>
+    <g fill="#fff">
+      <text x="522" y="165">GND</text><text x="522" y="195">VCC</text><text x="522" y="225">SCL</text><text x="522" y="255">SDA</text>
+      <text x="522" y="285">RES</text><text x="522" y="315">DC</text><text x="522" y="345">CS</text><text x="522" y="375">BUSY</text>
+    </g>
+    <!-- wire labels -->
+    <g fill="#374151" font-size="11" font-weight="normal" text-anchor="middle">
+      <text x="400" y="154">GND</text><text x="400" y="184">3.3V</text><text x="400" y="214">SPI SCK</text><text x="400" y="244">SPI MOSI</text>
+      <text x="400" y="274">Reset</text><text x="400" y="304">Data/Cmd</text><text x="400" y="334">Chip Select</text><text x="400" y="364">Busy</text>
+    </g>
+  </g>
+
+  </g>
+  <text x="480" y="458" text-anchor="middle" font-size="12" fill="#b91c1c">電子紙 VCC 接 3V3，不要接 5V；SCL/SDA 在這裡是 SPI 的 SCK/MOSI，不是 I²C；旋鈕的 + / GND 由 GP6 / GP7 供電</text>
+</svg>

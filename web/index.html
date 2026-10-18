@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>電子紙名片編輯器</title>
+<style>
+:root{--bg:#f3f4f6;--card:#fff;--fg:#1d1f23;--mut:#6b7280;--acc:#2563eb;--bd:#d9dce1;--sel:#ef4444;--bezel:#2b2f36}
+@media(prefers-color-scheme:dark){:root{--bg:#121417;--card:#1d2024;--fg:#e8eaed;--mut:#9aa0a6;--acc:#60a5fa;--bd:#33373d;--bezel:#000}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;font-size:15px}
+main{max-width:760px;margin:0 auto;padding:0 12px 40px}
+header{display:flex;align-items:center;justify-content:space-between;padding:10px 0;gap:8px}
+header h1{font-size:17px;margin:0}
+#devline{font-size:12px;color:var(--mut);text-align:right}
+/* 預覽框：sticky 讓手機往下捲動調整屬性時仍看得到 */
+#stageWrap{position:sticky;top:0;z-index:5;background:var(--bg);padding:8px 0 10px}
+#bezel{background:var(--bezel);border-radius:14px;padding:14px;margin:0 auto;width:fit-content;max-width:100%;box-shadow:0 4px 18px rgba(0,0,0,.25)}
+#stage{position:relative;touch-action:none;user-select:none;-webkit-user-select:none}
+#cv{display:block;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges;background:#fff}
+#ov{position:absolute;inset:0;cursor:default}
+.sel{position:absolute;outline:2px solid var(--sel);outline-offset:1px;pointer-events:none}
+.hdl{position:absolute;right:-11px;bottom:-11px;width:22px;height:22px;border-radius:50%;background:var(--sel);border:3px solid #fff;pointer-events:auto;cursor:nwse-resize;touch-action:none}
+.guide{position:absolute;background:#22c55e;pointer-events:none}
+#pagebar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:8px;font-size:12px;color:var(--mut)}
+#pagebar button{min-width:36px;padding:5px 0;position:relative;font-weight:600}
+#pagebar button.has{background:color-mix(in srgb,var(--fg) 10%,var(--card))}
+#pagebar button.edit{border:2px solid var(--acc);color:var(--acc)}
+#pagebar button.cur::after{content:"";position:absolute;top:-4px;right:-4px;width:9px;height:9px;border-radius:50%;background:#22c55e;border:2px solid var(--bg)}
+#pagebar button.dirty::before{content:"*";position:absolute;top:-2px;left:4px;color:var(--sel)}
+#zoomline{display:flex;justify-content:center;gap:10px;align-items:center;font-size:12px;color:var(--mut);margin-top:6px}
+#zoomline input{width:110px}
+.tools{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px}
+button{font:inherit;padding:8px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--fg);cursor:pointer}
+button.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+button.dan{color:#dc2626}
+button:disabled{opacity:.45}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;margin-bottom:12px}
+h2{font-size:15px;margin:0 0 8px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px 10px}
+.grid .full{grid-column:1/-1}
+label.f{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mut)}
+label.c{display:flex;align-items:center;gap:6px;font-size:14px}
+input,select,textarea{font:inherit;padding:7px 8px;border:1px solid var(--bd);border-radius:7px;background:var(--bg);color:var(--fg);width:100%}
+input[type=checkbox]{width:auto}
+input[type=range]{padding:0}
+textarea{min-height:56px;resize:vertical}
+.row{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+#layers{list-style:none;margin:0;padding:0}
+#layers li{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:7px;cursor:pointer;font-size:14px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#layers li.on{background:color-mix(in srgb,var(--acc) 18%,transparent)}
+#layers li span{color:var(--mut);font-size:12px;width:34px;flex:none}
+.iconpick{display:flex;flex-wrap:wrap;gap:6px}
+.iconpick button{padding:4px;width:40px;height:40px;display:flex;align-items:center;justify-content:center}
+.iconpick button.on{border-color:var(--acc);border-width:2px}
+.iconpick svg{width:24px;height:24px;fill:currentColor}
+.mut{color:var(--mut);font-size:13px;line-height:1.6}
+#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#111;color:#fff;padding:10px 16px;border-radius:9px;display:none;z-index:20;font-size:14px;max-width:90vw}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>電子紙名片編輯器</h1>
+  <div id="devline">連線中…</div>
+</header>
+
+<div id="stageWrap">
+  <div id="pagebar"></div>
+  <div id="bezel"><div id="stage"><canvas id="cv"></canvas><div id="ov"></div></div></div>
+  <div id="zoomline">縮放 <input type="range" id="zoom" min="1" max="6" step="0.5" value="3"> <span id="dims"></span></div>
+</div>
+
+<div class="tools">
+  <button data-add="text">＋文字</button>
+  <button data-add="image">＋圖片</button>
+  <button data-add="qr">＋QR</button>
+  <button data-add="icon">＋圖示</button>
+  <button data-add="rect">＋方框</button>
+  <button data-add="line">＋線條</button>
+  <button id="undo" title="Ctrl+Z">↶ 復原</button>
+  <button id="redo" title="Ctrl+Y">↷ 重做</button>
+</div>
+<input type="file" id="imgfile" accept="image/*" class="hide">
+<input type="file" id="layoutfile" accept="application/json,.json" class="hide">
+
+<section id="propsec">
+  <h2 id="proptitle">屬性</h2>
+  <div id="props"></div>
+</section>
+
+<section>
+  <h2>送出</h2>
+  <div class="row" style="margin-top:0">
+    <button class="pri" id="send">送到電子紙</button>
+    <label class="c"><input type="checkbox" id="fast">快速刷新（較快、可能殘影）</label>
+  </div>
+  <div class="row">
+    <button id="showpage">在螢幕顯示這張</button>
+    <button id="nextpage">螢幕切到下一張</button>
+    <button class="dan" id="delpage">刪除這張</button>
+  </div>
+  <div class="mut" style="margin-top:6px">上方數字是圖片編號（最多 8 張）：<b>藍框</b>＝正在編輯、<b>灰底</b>＝已存圖、<b style="color:#22c55e">綠點</b>＝目前螢幕顯示、<b style="color:var(--sel)">*</b>＝有未送出的修改。裝置上<b>轉旋鈕</b>切換上一張/下一張（連轉幾格跳幾張），<b>按旋鈕</b>回到第 1 張；<b>BOOT 鍵</b>短按切下一張。兩者長按 2 秒都會顯示連線資訊。<br>送出時會一併把版面存到裝置上，之後用任何手機連上都能繼續編輯。所有影像運算都在這台裝置的瀏覽器完成。</div>
+</section>
+
+<section>
+  <h2>版面</h2>
+  <div class="grid">
+    <label class="f">方向<select id="rot">
+      <option value="1">橫向</option><option value="3">橫向（倒轉 180°）</option>
+      <option value="0">直向</option><option value="2">直向（倒轉 180°）</option></select></label>
+    <label class="f">背景<select id="bg"><option value="white">白</option><option value="black">黑</option></select></label>
+  </div>
+  <div class="row">
+    <button id="tpl">套用名片範本</button>
+    <button id="save">只儲存版面</button>
+    <button id="export">匯出版面檔</button>
+    <button id="import">匯入版面檔</button>
+    <button class="dan" id="clearall">清空版面</button>
+  </div>
+</section>
+
+<section>
+  <h2>圖層（上面的會蓋住下面）</h2>
+  <ul id="layers"></ul>
+</section>
+
+<section>
+  <h2>Wi-Fi 連線（選填）</h2>
+  <div class="mut">裝置會一直開著熱點「<b id="apname">-</b>」。填入家裡/公司的 Wi-Fi 後，同網路下也能用 <b>http://epaper.local</b> 開啟本頁。</div>
+  <div class="grid" style="margin-top:8px">
+    <label class="f">Wi-Fi 名稱 (SSID)<input id="ssid" maxlength="32"></label>
+    <label class="f">密碼<input id="pass" type="password" maxlength="64" placeholder="不變更請留空"></label>
+  </div>
+  <div class="row"><button id="wifisave">儲存並重新連線</button></div>
+</section>
+
+<section>
+  <h2>裝置</h2>
+  <div class="mut" id="devinfo">-</div>
+  <div class="row">
+    <button id="netinfo">在螢幕顯示連線資訊</button>
+    <button id="redraw">重刷上次畫面</button>
+    <button id="clearscr">清空螢幕</button>
+    <button id="reboot">重新開機</button>
+  </div>
+</section>
+</main>
+<div id="toast"></div>
+
+<!--VENDOR_QRCODE-->
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const cv = $('#cv'), ctx = cv.getContext('2d', {willReadFrequently: true});
+const ov = $('#ov'), stage = $('#stage');
+
+// ---------- 素材：圖示（Material Icons, Apache 2.0, 24x24） ----------
+const ICONS = {
+  phone: 'M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z',
+  mail: 'M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z',
+  link: 'M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z',
+  place: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z',
+  chat: 'M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z',
+  person: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
+  work: 'M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6 0h-4V4h4v2z',
+  home: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
+  calendar: 'M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z',
+  star: 'M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z',
+  heart: 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z',
+  check: 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
+};
+const ICON_NAMES = {phone:'電話',mail:'郵件',link:'網址',place:'地點',chat:'訊息',person:'人',work:'公司',home:'住家',calendar:'日曆',star:'星星',heart:'愛心',check:'勾選'};
+const iconPaths = {};
+for (const k in ICONS) iconPaths[k] = new Path2D(ICONS[k]);
+
+const FONTS = {
+  sans: '"PingFang TC","Noto Sans TC","Noto Sans CJK TC","Microsoft JhengHei",sans-serif',
+  serif: '"Songti TC","Noto Serif TC","Noto Serif CJK TC","PMingLiU",serif',
+  mono: 'ui-monospace,Menlo,Consolas,monospace',
+};
+const TYPE_NAMES = {text:'文字', image:'圖片', qr:'QR', icon:'圖示', rect:'方框'};
+
+// ---------- 狀態 ----------
+let dev = {w: 128, h: 296, panel: '離線預覽', offline: true};
+let doc = {rot: 1, bg: 'white', items: []};
+let selId = null, nid = 1;
+let undoStack = [], redoStack = [], editSnap = null;
+let zoom = 3;
+let editPage = 0, pageDirty = false;
+const pageDocs = {};   // 這次開啟期間編輯過的頁：{rot,bg,items,dirty}
+const MAXP = () => (dev.pages && dev.pages.length) || 8;
+
+const W = () => (doc.rot & 1) ? dev.h : dev.w;
+const H = () => (doc.rot & 1) ? dev.w : dev.h;
+const sel = () => doc.items.find(i => i.id === selId) || null;
+
+function toast(t, ms = 2500) {
+  const m = $('#toast'); m.textContent = t; m.style.display = 'block';
+  clearTimeout(m._t); m._t = setTimeout(() => m.style.display = 'none', ms);
+}
+
+// ---------- 復原/重做 ----------
+const snapshot = () => ({rot: doc.rot, bg: doc.bg, items: doc.items.map(o => ({...o})), selId});
+function restore(s) { doc.rot = s.rot; doc.bg = s.bg; doc.items = s.items.map(o => ({...o})); selId = s.selId; syncDocUI(); refreshAll(); }
+function beginEdit() { if (!editSnap) editSnap = snapshot(); }
+function commitEdit() {
+  if (!editSnap) return;
+  undoStack.push(editSnap); if (undoStack.length > 80) undoStack.shift();
+  redoStack = []; editSnap = null; updUndo(); scheduleSaveDraft();
+  if (!pageDirty) { pageDirty = true; renderPageBar(); }
+}
+function cancelEdit() { editSnap = null; }
+function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); restore(undoStack.pop()); updUndo(); }
+function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); restore(redoStack.pop()); updUndo(); }
+function updUndo() { $('#undo').disabled = !undoStack.length; $('#redo').disabled = !redoStack.length; }
+
+// ---------- 量測 ----------
+const mctx = document.createElement('canvas').getContext('2d');
+function fontOf(it) { return `${it.bold ? 'bold ' : ''}${it.size}px ${FONTS[it.font] || FONTS.sans}`; }
+function bbox(it) {
+  switch (it.type) {
+    case 'text': {
+      mctx.font = fontOf(it);
+      const lines = String(it.text).split('\n');
+      let w = 1;
+      for (const l of lines) w = Math.max(w, mctx.measureText(l).width);
+      return {x: it.x, y: it.y, w: Math.ceil(w), h: Math.ceil(lines.length * it.size * (it.lh || 1.2))};
+    }
+    case 'qr': case 'icon': return {x: it.x, y: it.y, w: it.size, h: it.size};
+    default: return {x: it.x, y: it.y, w: it.w, h: it.h};
+  }
+}
+
+// ---------- 圖片處理（全部在瀏覽器運算） ----------
+const imgCache = new Map();   // src -> HTMLImageElement
+const procCache = new Map();  // item id -> {key, canvas}
+function getImg(src) {
+  let im = imgCache.get(src);
+  if (!im) { im = new Image(); im.onload = () => { procCache.clear(); render(); }; im.src = src; imgCache.set(src, im); }
+  return im.complete && im.naturalWidth ? im : null;
+}
+
+function ditherGray(g, w, h, mode, thr) {
+  // g: Float32Array 灰階 0..255，就地轉成 0 或 255
+  if (mode === 'threshold') { for (let i = 0; i < g.length; i++) g[i] = g[i] < thr ? 0 : 255; return; }
+  const bias = thr - 128;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x, o = g[i], n = (o - bias) < 128 ? 0 : 255, e = o - n;
+    g[i] = n;
+    if (mode === 'floyd') {
+      if (x + 1 < w) g[i + 1] += e * 7 / 16;
+      if (y + 1 < h) {
+        if (x > 0) g[i + w - 1] += e * 3 / 16;
+        g[i + w] += e * 5 / 16;
+        if (x + 1 < w) g[i + w + 1] += e / 16;
+      }
+    } else { // atkinson
+      const f = e / 8;
+      if (x + 1 < w) g[i + 1] += f;
+      if (x + 2 < w) g[i + 2] += f;
+      if (y + 1 < h) { if (x > 0) g[i + w - 1] += f; g[i + w] += f; if (x + 1 < w) g[i + w + 1] += f; }
+      if (y + 2 < h) g[i + 2 * w] += f;
+    }
+  }
+}
+
+function processedImage(it) {
+  const w = Math.max(1, Math.round(it.w)), h = Math.max(1, Math.round(it.h));
+  const key = [it.src.length, it.src.slice(-32), w, h, it.mode, it.thr, it.bright, it.contrast, it.invert].join('|');
+  const c = procCache.get(it.id);
+  if (c && c.key === key) return c.canvas;
+  const im = getImg(it.src);
+  if (!im) return null;
+  const can = document.createElement('canvas'); can.width = w; can.height = h;
+  const x = can.getContext('2d', {willReadFrequently: true});
+  x.fillStyle = '#fff'; x.fillRect(0, 0, w, h);
+  x.imageSmoothingQuality = 'high';
+  x.drawImage(im, 0, 0, w, h);
+  const d = x.getImageData(0, 0, w, h), p = d.data, g = new Float32Array(w * h);
+  const cf = (259 * (it.contrast + 255)) / (255 * (259 - it.contrast));
+  for (let i = 0; i < g.length; i++) {
+    let v = 0.299 * p[i * 4] + 0.587 * p[i * 4 + 1] + 0.114 * p[i * 4 + 2];
+    v = cf * (v - 128) + 128 + it.bright;
+    if (it.invert) v = 255 - v;
+    g[i] = Math.max(0, Math.min(255, v));
+  }
+  ditherGray(g, w, h, it.mode, it.thr);
+  for (let i = 0; i < g.length; i++) { p[i * 4] = p[i * 4 + 1] = p[i * 4 + 2] = g[i]; p[i * 4 + 3] = 255; }
+  x.putImageData(d, 0, 0);
+  procCache.set(it.id, {key, canvas: can});
+  return can;
+}
+
+// ---------- QR ----------
+const qrCache = new Map();
+function qrMatrix(data, ecc) {
+  const k = ecc + '|' + data;
+  if (qrCache.has(k)) return qrCache.get(k);
+  let m = null;
+  try {
+    qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+    const q = qrcode(0, ecc); q.addData(data, 'Byte'); q.make();
+    const n = q.getModuleCount();
+    m = {n, dark: (r, c) => q.isDark(r, c)};
+  } catch (e) { m = null; }
+  qrCache.set(k, m);
+  return m;
+}
+
+// ---------- 繪製 ----------
+function colorOf(c) { return c === 'white' ? '#fff' : '#000'; }
+function drawItem(c, it) {
+  switch (it.type) {
+    case 'text': {
+      c.font = fontOf(it); c.fillStyle = colorOf(it.color); c.textBaseline = 'top';
+      const lines = String(it.text).split('\n'), b = bbox(it), lh = it.size * (it.lh || 1.2);
+      c.textAlign = it.align || 'left';
+      const ax = it.align === 'center' ? it.x + b.w / 2 : it.align === 'right' ? it.x + b.w : it.x;
+      lines.forEach((l, i) => c.fillText(l, ax, it.y + i * lh + (lh - it.size) / 2));
+      c.textAlign = 'left';
+      break;
+    }
+    case 'image': {
+      const p = processedImage(it);
+      if (p) c.drawImage(p, Math.round(it.x), Math.round(it.y));
+      else { c.strokeStyle = '#000'; c.setLineDash([3, 3]); c.strokeRect(it.x + .5, it.y + .5, it.w - 1, it.h - 1); c.setLineDash([]); }
+      break;
+    }
+    case 'qr': {
+      const m = qrMatrix(it.data || ' ', it.ecc || 'M');
+      if (!m) { c.fillStyle = '#000'; c.fillRect(it.x, it.y, it.size, it.size); break; }
+      const quiet = 1, total = m.n + quiet * 2, s = Math.max(1, Math.floor(it.size / total));
+      const side = total * s, ox = Math.round(it.x + (it.size - side) / 2), oy = Math.round(it.y + (it.size - side) / 2);
+      c.fillStyle = '#fff'; c.fillRect(ox, oy, side, side);
+      c.fillStyle = '#000';
+      for (let r = 0; r < m.n; r++) for (let q = 0; q < m.n; q++)
+        if (m.dark(r, q)) c.fillRect(ox + (q + quiet) * s, oy + (r + quiet) * s, s, s);
+      break;
+    }
+    case 'icon': {
+      c.save(); c.translate(it.x, it.y); c.scale(it.size / 24, it.size / 24);
+      c.fillStyle = colorOf(it.color); c.fill(iconPaths[it.name] || iconPaths.star); c.restore();
+      break;
+    }
+    case 'rect': {
+      c.fillStyle = c.strokeStyle = colorOf(it.color);
+      const r = Math.min(it.radius || 0, it.w / 2, it.h / 2);
+      c.beginPath();
+      if (it.fill) { c.roundRect ? c.roundRect(it.x, it.y, it.w, it.h, r) : c.rect(it.x, it.y, it.w, it.h); c.fill(); }
+      else {
+        const s = it.stroke || 1, hs = s / 2;
+        c.lineWidth = s;
+        c.roundRect ? c.roundRect(it.x + hs, it.y + hs, it.w - s, it.h - s, Math.max(0, r - hs)) : c.rect(it.x + hs, it.y + hs, it.w - s, it.h - s);
+        c.stroke();
+      }
+      break;
+    }
+  }
+}
+
+// 畫到畫布並轉成純黑白（預覽 = 實際送出的點陣）
+function renderBW(c, w, h) {
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.fillStyle = doc.bg === 'black' ? '#000' : '#fff'; c.fillRect(0, 0, w, h);
+  for (const it of doc.items) drawItem(c, it);
+  const d = c.getImageData(0, 0, w, h), p = d.data;
+  for (let i = 0; i < p.length; i += 4) {
+    // 門檻 160（比 128 高）讓小字的反鋸齒筆畫保留下來；圖片已是純黑白不受影響
+    const v = (p[i] * 0.299 + p[i + 1] * 0.587 + p[i + 2] * 0.114) < 160 ? 0 : 255;
+    p[i] = p[i + 1] = p[i + 2] = v; p[i + 3] = 255;
+  }
+  c.putImageData(d, 0, 0);
+  return d;
+}
+
+let rafPending = false;
+function render() {
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => { rafPending = false; renderNow(); });
+}
+function renderNow() {
+  const w = W(), h = H();
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; layoutStage(); }
+  renderBW(ctx, w, h);
+  drawOverlay();
+}
+
+function packBits(d, w, h) {
+  const rb = (w + 7) >> 3, out = new Uint8Array(rb * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++)
+    if (d.data[(y * w + x) * 4] < 128) out[y * rb + (x >> 3)] |= 0x80 >> (x & 7);
+  return out;
+}
+
+// ---------- 預覽框大小 ----------
+function layoutStage() {
+  const w = W(), h = H();
+  const avail = $('#stageWrap').clientWidth - 28;
+  const maxH = window.innerHeight * 0.42;
+  const s = Math.max(0.5, Math.min(zoom, avail / w, maxH / h));
+  stage.style.width = Math.round(w * s) + 'px';
+  stage.style.height = Math.round(h * s) + 'px';
+  $('#dims').textContent = `${w}×${h} px`;
+  drawOverlay();
+}
+const scale = () => stage.clientWidth / W();
+
+// ---------- 選取框 / 拖曳 ----------
+let guides = [];
+function drawOverlay() {
+  ov.innerHTML = '';
+  const s = scale();
+  for (const g of guides) {
+    const d = document.createElement('div'); d.className = 'guide';
+    if (g.v !== undefined) Object.assign(d.style, {left: g.v * s + 'px', top: 0, width: '1px', height: '100%'});
+    else Object.assign(d.style, {top: g.h * s + 'px', left: 0, height: '1px', width: '100%'});
+    ov.appendChild(d);
+  }
+  const it = sel();
+  if (!it) return;
+  const b = bbox(it), d = document.createElement('div');
+  d.className = 'sel';
+  Object.assign(d.style, {left: b.x * s + 'px', top: b.y * s + 'px', width: b.w * s + 'px', height: b.h * s + 'px'});
+  const hd = document.createElement('div'); hd.className = 'hdl'; hd.dataset.handle = '1';
+  d.appendChild(hd); ov.appendChild(d);
+}
+
+function hitTest(px, py) {
+  for (let i = doc.items.length - 1; i >= 0; i--) {
+    const b = bbox(doc.items[i]), pad = 3 / Math.min(1, scale() / 3);
+    if (px >= b.x - pad && px <= b.x + b.w + pad && py >= b.y - pad && py <= b.y + b.h + pad) return doc.items[i];
+  }
+  return null;
+}
+
+let drag = null;
+ov.addEventListener('pointerdown', e => {
+  const r = stage.getBoundingClientRect(), s = scale();
+  const px = (e.clientX - r.left) / s, py = (e.clientY - r.top) / s;
+  let it = e.target.dataset.handle ? sel() : hitTest(px, py);
+  if (!it) { if (selId !== null) { selId = null; refreshAll(); } return; }
+  if (it.id !== selId) { selId = it.id; refreshAll(); }
+  beginEdit();
+  drag = {mode: e.target.dataset.handle ? 'resize' : 'move', px, py, orig: {...it}, b: bbox(it), moved: false};
+  ov.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+ov.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const it = sel(); if (!it) return;
+  const r = stage.getBoundingClientRect(), s = scale();
+  const dx = (e.clientX - r.left) / s - drag.px, dy = (e.clientY - r.top) / s - drag.py;
+  if (Math.abs(dx) + Math.abs(dy) > 0.5) drag.moved = true;
+  const o = drag.orig;
+  guides = [];
+  if (drag.mode === 'move') {
+    let nx = Math.round(o.x + dx), ny = Math.round(o.y + dy);
+    const b = drag.b, snap = 4 / Math.min(1, s / 2);
+    // 吸附：水平/垂直置中與邊界
+    const cx = nx + b.w / 2, cy = ny + b.h / 2;
+    if (Math.abs(cx - W() / 2) < snap) { nx = Math.round(W() / 2 - b.w / 2); guides.push({v: W() / 2}); }
+    if (Math.abs(cy - H() / 2) < snap) { ny = Math.round(H() / 2 - b.h / 2); guides.push({h: H() / 2}); }
+    it.x = nx; it.y = ny;
+  } else {
+    const b = drag.b, nw = Math.max(4, b.w + dx), nh = Math.max(2, b.h + dy);
+    if (it.type === 'text') it.size = Math.max(6, Math.round(o.size * nw / b.w));
+    else if (it.type === 'qr' || it.type === 'icon') it.size = Math.max(8, Math.round(o.size + Math.max(dx, dy)));
+    else if (it.type === 'image' && it.keep) { it.w = Math.round(nw); it.h = Math.max(1, Math.round(nw * o.h / o.w)); }
+    else { it.w = Math.round(nw); it.h = Math.round(nh); }
+  }
+  render(); fillPropValues();
+});
+function endDrag() {
+  if (!drag) return;
+  if (drag.moved) commitEdit(); else cancelEdit();
+  drag = null; guides = []; render(); renderLayers();
+}
+ov.addEventListener('pointerup', endDrag);
+ov.addEventListener('pointercancel', endDrag);
+
+document.addEventListener('keydown', e => {
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+  const it = sel(); if (!it) return;
+  const step = e.shiftKey ? 10 : 1;
+  const mv = {ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step]}[e.key];
+  if (mv) { e.preventDefault(); beginEdit(); it.x += mv[0]; it.y += mv[1]; commitEdit(); render(); fillPropValues(); }
+  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeSel(); }
+});
+
+// ---------- 新增素材 ----------
+function addItem(it) {
+  beginEdit();
+  it.id = nid++;
+  doc.items.push(it); selId = it.id;
+  commitEdit(); refreshAll();
+}
+function centerPos(w, h) { return {x: Math.round((W() - w) / 2), y: Math.round((H() - h) / 2)}; }
+function newItem(type) {
+  switch (type) {
+    case 'text': return {type, ...centerPos(60, 20), text: '文字', size: 18, font: 'sans', bold: false, align: 'left', color: 'black', lh: 1.2};
+    case 'qr': { const s = Math.min(80, Math.min(W(), H()) - 8); return {type, ...centerPos(s, s), size: s, data: 'https://example.com', ecc: 'M'}; }
+    case 'icon': return {type, ...centerPos(24, 24), size: 24, name: 'phone', color: 'black'};
+    case 'rect': return {type, ...centerPos(80, 40), w: 80, h: 40, fill: false, stroke: 2, radius: 0, color: 'black'};
+    case 'line': return {type: 'rect', ...centerPos(100, 2), w: 100, h: 2, fill: true, stroke: 1, radius: 0, color: 'black'};
+  }
+}
+document.querySelectorAll('[data-add]').forEach(b => b.onclick = () => {
+  const t = b.dataset.add;
+  if (t === 'image') { $('#imgfile').dataset.replace = ''; $('#imgfile').click(); return; }
+  addItem(newItem(t));
+});
+
+// 匯入圖片：先在瀏覽器縮小、轉成 JPEG/PNG data URL（存進版面檔），原圖不會上傳
+function loadImageFile(file) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file), im = new Image();
+    im.onload = () => {
+      const maxSide = Math.max(dev.w, dev.h) * 2;
+      const k = Math.min(1, maxSide / Math.max(im.naturalWidth, im.naturalHeight));
+      const w = Math.max(1, Math.round(im.naturalWidth * k)), h = Math.max(1, Math.round(im.naturalHeight * k));
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h);
+      x.imageSmoothingQuality = 'high'; x.drawImage(im, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      const png = c.toDataURL('image/png'), jpg = c.toDataURL('image/jpeg', 0.9);
+      res({src: png.length < jpg.length * 1.3 ? png : jpg, w, h});
+    };
+    im.onerror = () => { URL.revokeObjectURL(url); rej(new Error('無法讀取圖片')); };
+    im.src = url;
+  });
+}
+$('#imgfile').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  try {
+    const r = await loadImageFile(f);
+    const k = Math.min(1, (W() * 0.6) / r.w, (H() * 0.8) / r.h);
+    const w = Math.max(4, Math.round(r.w * k)), h = Math.max(4, Math.round(r.h * k));
+    if ($('#imgfile').dataset.replace) {
+      const it = sel(); if (!it) return;
+      beginEdit(); it.src = r.src; it.h = Math.round(it.w * r.h / r.w); commitEdit(); refreshAll();
+    } else {
+      addItem({type: 'image', ...centerPos(w, h), w, h, src: r.src, keep: true, mode: 'atkinson', thr: 128, bright: 0, contrast: 0, invert: false});
+    }
+  } catch (err) { toast(err.message); }
+};
+
+// ---------- 屬性面板 ----------
+function el(tag, attrs = {}, kids = []) {
+  const e = document.createElement(tag);
+  for (const k in attrs) { if (k === 'class') e.className = attrs[k]; else if (k.startsWith('on')) e[k] = attrs[k]; else e.setAttribute(k, attrs[k]); }
+  for (const c of [].concat(kids)) e.append(c);
+  return e;
+}
+// 一個欄位：key 對應 item 屬性
+function field(label, key, type, opts = {}) {
+  const it = sel();
+  let inp;
+  if (type === 'select') {
+    inp = el('select', {}, opts.options.map(([v, t]) => el('option', {value: v}, t)));
+  } else if (type === 'textarea') {
+    inp = el('textarea', {rows: 2});
+  } else if (type === 'checkbox') {
+    inp = el('input', {type: 'checkbox'});
+  } else {
+    inp = el('input', {type, ...(opts.attrs || {})});
+  }
+  inp.dataset.key = key;
+  const read = () => type === 'checkbox' ? inp.checked : (type === 'number' || type === 'range') ? Number(inp.value) : inp.value;
+  inp.oninput = () => {
+    const t = sel(); if (!t) return;
+    beginEdit();
+    let v = read();
+    if ((type === 'number' || type === 'range') && Number.isNaN(v)) return;
+    if (opts.apply) opts.apply(t, v); else t[key] = v;
+    render(); if (opts.relayer) renderLayers(); if (opts.refill) fillPropValues(inp);
+  };
+  inp.onchange = () => { inp.oninput(); commitEdit(); renderLayers(); };
+  if (type === 'checkbox') return el('label', {class: 'c' + (opts.full ? ' full' : '')}, [inp, label]);
+  return el('label', {class: 'f' + (opts.full ? ' full' : '')}, [label, inp]);
+}
+function fillPropValues(skip) {
+  const it = sel(); if (!it) return;
+  document.querySelectorAll('#props [data-key]').forEach(inp => {
+    if (inp === skip || document.activeElement === inp && inp.type !== 'range') return;
+    const v = it[inp.dataset.key];
+    if (inp.type === 'checkbox') inp.checked = !!v; else inp.value = v ?? '';
+  });
+}
+const COLOR = ['select', {options: [['black', '黑'], ['white', '白']]}];
+
+function renderProps() {
+  const p = $('#props'); p.innerHTML = '';
+  const it = sel();
+  if (!it) {
+    $('#proptitle').textContent = '屬性';
+    p.append(el('div', {class: 'mut'}, '點選預覽框中的素材來編輯；拖曳可移動，拖右下角紅點可縮放。方向鍵微調、Shift+方向鍵一次 10px。'));
+    return;
+  }
+  $('#proptitle').textContent = TYPE_NAMES[it.type] + ' 屬性';
+  const g = el('div', {class: 'grid'});
+  const num = (a = {}) => ({attrs: {step: 1, ...a}});
+  switch (it.type) {
+    case 'text':
+      g.append(
+        field('內容（可換行）', 'text', 'textarea', {full: true, relayer: true}),
+        field('字級 px', 'size', 'number', num({min: 6, max: 200})),
+        field('字型', 'font', 'select', {options: [['sans', '黑體'], ['serif', '明體'], ['mono', '等寬']]}),
+        field('對齊', 'align', 'select', {options: [['left', '靠左'], ['center', '置中'], ['right', '靠右']]}),
+        field('顏色', 'color', ...COLOR),
+        field('行高', 'lh', 'number', {attrs: {step: 0.05, min: 0.8, max: 3}}),
+        field('粗體', 'bold', 'checkbox'));
+      break;
+    case 'image':
+      g.append(
+        field('寬', 'w', 'number', {...num({min: 1}), refill: true, apply: (t, v) => { if (t.keep) t.h = Math.max(1, Math.round(v * t.h / t.w)); t.w = Math.max(1, v); }}),
+        field('高', 'h', 'number', {...num({min: 1}), refill: true, apply: (t, v) => { if (t.keep) t.w = Math.max(1, Math.round(v * t.w / t.h)); t.h = Math.max(1, v); }}),
+        field('轉換方式', 'mode', 'select', {options: [['atkinson', '抖色 Atkinson（照片推薦）'], ['floyd', '抖色 Floyd–Steinberg'], ['threshold', '黑白門檻（Logo/文字圖）']]}),
+        field('門檻 / 偏移', 'thr', 'range', {attrs: {min: 1, max: 254}}),
+        field('亮度', 'bright', 'range', {attrs: {min: -128, max: 128}}),
+        field('對比', 'contrast', 'range', {attrs: {min: -128, max: 128}}),
+        field('鎖定比例', 'keep', 'checkbox'),
+        field('負片', 'invert', 'checkbox'),
+        el('div', {class: 'full'}, el('button', {onclick: () => { $('#imgfile').dataset.replace = '1'; $('#imgfile').click(); }}, '更換圖片')));
+      break;
+    case 'qr':
+      g.append(
+        field('內容（網址、文字、vCard…）', 'data', 'textarea', {full: true, relayer: true}),
+        field('大小 px', 'size', 'number', num({min: 21})),
+        field('容錯', 'ecc', 'select', {options: [['L', 'L 7%'], ['M', 'M 15%'], ['Q', 'Q 25%'], ['H', 'H 30%']]}));
+      break;
+    case 'icon': {
+      const pick = el('div', {class: 'iconpick full'});
+      for (const k in ICONS) {
+        const b = el('button', {title: ICON_NAMES[k], class: it.name === k ? 'on' : ''});
+        b.innerHTML = `<svg viewBox="0 0 24 24"><path d="${ICONS[k]}"/></svg>`;
+        b.onclick = () => { beginEdit(); sel().name = k; commitEdit(); refreshAll(); };
+        pick.append(b);
+      }
+      g.append(pick, field('大小 px', 'size', 'number', num({min: 8})), field('顏色', 'color', ...COLOR));
+      break;
+    }
+    case 'rect':
+      g.append(
+        field('寬', 'w', 'number', num({min: 1})),
+        field('高', 'h', 'number', num({min: 1})),
+        field('線寬', 'stroke', 'number', num({min: 1, max: 20})),
+        field('圓角', 'radius', 'number', num({min: 0})),
+        field('顏色', 'color', ...COLOR),
+        field('填滿', 'fill', 'checkbox'));
+      break;
+  }
+  g.append(field('X', 'x', 'number', num()), field('Y', 'y', 'number', num()));
+  p.append(g);
+  const it2 = it;
+  p.append(el('div', {class: 'row'}, [
+    el('button', {onclick: () => alignSel('h')}, '水平置中'),
+    el('button', {onclick: () => alignSel('v')}, '垂直置中'),
+    el('button', {onclick: () => moveLayer(1)}, '上移一層'),
+    el('button', {onclick: () => moveLayer(-1)}, '下移一層'),
+    el('button', {onclick: () => { const c = {...it2, x: it2.x + 6, y: it2.y + 6}; delete c.id; addItem(c); }}, '複製'),
+    el('button', {class: 'dan', onclick: removeSel}, '刪除'),
+  ]));
+  fillPropValues();
+}
+
+function alignSel(dir) {
+  const it = sel(); if (!it) return;
+  const b = bbox(it); beginEdit();
+  if (dir === 'h') it.x = Math.round((W() - b.w) / 2); else it.y = Math.round((H() - b.h) / 2);
+  commitEdit(); render(); fillPropValues();
+}
+function moveLayer(d) {
+  const i = doc.items.findIndex(x => x.id === selId), j = i + d;
+  if (i < 0 || j < 0 || j >= doc.items.length) return;
+  beginEdit(); [doc.items[i], doc.items[j]] = [doc.items[j], doc.items[i]]; commitEdit(); refreshAll();
+}
+function removeSel() {
+  const i = doc.items.findIndex(x => x.id === selId); if (i < 0) return;
+  beginEdit(); doc.items.splice(i, 1); procCache.delete(selId); selId = null; commitEdit(); refreshAll();
+}
+
+function renderLayers() {
+  const ul = $('#layers'); ul.innerHTML = '';
+  if (!doc.items.length) { ul.append(el('li', {class: 'mut'}, '（空白）用上方按鈕加入素材，或按「套用名片範本」')); return; }
+  [...doc.items].reverse().forEach(it => {
+    const label = it.type === 'text' ? it.text.split('\n')[0] : it.type === 'qr' ? it.data : it.type === 'icon' ? ICON_NAMES[it.name] : it.type === 'image' ? `${it.w}×${it.h}` : `${it.w}×${it.h}${it.fill ? ' 填滿' : ''}`;
+    const li = el('li', {class: it.id === selId ? 'on' : ''}, [el('span', {}, TYPE_NAMES[it.type]), label || '（空）']);
+    li.onclick = () => { selId = it.id; refreshAll(); };
+    ul.append(li);
+  });
+}
+
+function refreshAll() { render(); renderProps(); renderLayers(); }
+
+// ---------- 版面設定 ----------
+function syncDocUI() { $('#rot').value = doc.rot; $('#bg').value = doc.bg; }
+$('#rot').onchange = e => {
+  const nr = Number(e.target.value);
+  const swap = (nr & 1) !== (doc.rot & 1);
+  beginEdit(); doc.rot = nr;
+  if (swap && doc.items.length) {
+    if (confirm('方向改變了，要改用這個方向的名片範本嗎？\n（取消＝保留目前素材，自行調整位置；可按復原）')) {
+      doc.items = template().map(it => ({...it, id: nid++})); selId = null;
+    } else { // 素材保持在畫面內
+      for (const it of doc.items) { const b = bbox(it); it.x = Math.max(0, Math.min(it.x, W() - b.w)); it.y = Math.max(0, Math.min(it.y, H() - b.h)); }
+    }
+  }
+  commitEdit(); layoutStage(); refreshAll();
+};
+$('#bg').onchange = e => { beginEdit(); doc.bg = e.target.value; commitEdit(); render(); };
+$('#zoom').oninput = e => { zoom = Number(e.target.value); layoutStage(); };
+window.addEventListener('resize', layoutStage);
+
+// 名片範本
+function template() {
+  const w = W(), h = H(), m = 6, land = w > h;
+  const items = [];
+  const t = (text, x, y, size, extra = {}) => items.push({type: 'text', x, y, text, size, font: 'sans', bold: false, align: 'left', color: 'black', lh: 1.2, ...extra});
+  if (land) {
+    const qs = h - 2 * m - 8;
+    t('王小明', m + 2, m, Math.round(h * 0.22), {bold: true});
+    t('產品設計師', m + 2, m + Math.round(h * 0.3), Math.round(h * 0.11));
+    t('ABC 科技股份有限公司', m + 2, m + Math.round(h * 0.44), Math.round(h * 0.1));
+    items.push({type: 'rect', x: m + 2, y: Math.round(h * 0.62), w: w - qs - 3 * m - 6, h: 2, fill: true, stroke: 1, radius: 0, color: 'black'});
+    const y0 = Math.round(h * 0.62) + 5, gap = Math.floor((h - m - y0) / 3), fs = Math.max(9, gap - 3);
+    [['phone', '0912-345-678'], ['mail', 'name@example.com'], ['link', 'example.com']].forEach(([ic, tx], i) => {
+      items.push({type: 'icon', x: m + 2, y: y0 + i * gap, size: fs, name: ic, color: 'black'});
+      t(tx, m + fs + 6, y0 + i * gap - 1, fs);
+    });
+    items.push({type: 'qr', x: w - m - qs, y: Math.round((h - qs) / 2), size: qs, data: 'https://example.com', ecc: 'M'});
+  } else {
+    const qs = w - 2 * m - 16;
+    t('王小明', m, m + 2, Math.round(w * 0.2), {bold: true});
+    t('產品設計師', m, m + Math.round(w * 0.3), Math.round(w * 0.1));
+    t('ABC 科技', m, m + Math.round(w * 0.43), Math.round(w * 0.1));
+    items.push({type: 'rect', x: m, y: m + Math.round(w * 0.6), w: w - 2 * m, h: 2, fill: true, stroke: 1, radius: 0, color: 'black'});
+    const fs = Math.max(10, Math.round(w * 0.085)), y0 = m + Math.round(w * 0.6) + 6, gap = fs + 5;
+    [['phone', '0912-345-678'], ['mail', 'me@ex.com'], ['link', 'example.com']].forEach(([ic, tx], i) => {
+      items.push({type: 'icon', x: m, y: y0 + i * gap, size: fs, name: ic, color: 'black'});
+      t(tx, m + fs + 4, y0 + i * gap - 1, fs);
+    });
+    items.push({type: 'qr', x: Math.round((w - qs) / 2), y: h - m - qs, size: qs, data: 'https://example.com', ecc: 'M'});
+  }
+  return items;
+}
+$('#tpl').onclick = () => {
+  if (doc.items.length && !confirm('套用範本會取代目前版面（可按復原），確定？')) return;
+  beginEdit(); doc.items = template().map(it => ({...it, id: nid++})); selId = null; commitEdit(); refreshAll();
+};
+$('#clearall').onclick = () => {
+  if (!doc.items.length || !confirm('清空所有素材？（可按復原）')) return;
+  beginEdit(); doc.items = []; selId = null; commitEdit(); refreshAll();
+};
+
+// ---------- 存檔 / 載入 ----------
+function layoutJSON() {
+  return JSON.stringify({app: 'epaper-card', version: 1, panel: {w: dev.w, h: dev.h}, rot: doc.rot, bg: doc.bg, items: doc.items.map(({id, ...r}) => r)});
+}
+function applyLayout(j) {
+  if (!j || !Array.isArray(j.items)) throw new Error('版面檔格式不正確');
+  doc.rot = [0, 1, 2, 3].includes(j.rot) ? j.rot : 1;
+  doc.bg = j.bg === 'black' ? 'black' : 'white';
+  doc.items = j.items.filter(it => TYPE_NAMES[it.type]).map(it => ({...it, id: nid++}));
+  selId = null; procCache.clear(); syncDocUI(); layoutStage(); refreshAll();
+}
+async function api(path, opt) {
+  const r = await fetch(path, opt);
+  if (!r.ok) throw new Error((await r.text()) || r.status);
+  return r;
+}
+async function saveLayout() {
+  const fd = new FormData();
+  fd.append('file', new Blob([layoutJSON()], {type: 'application/json'}), 'layout.json');
+  await api(`/api/layout?page=${editPage}`, {method: 'POST', body: fd});
+}
+let draftT = null;
+function scheduleSaveDraft() {
+  clearTimeout(draftT);
+  draftT = setTimeout(() => { try { localStorage.setItem('epaper-draft-' + editPage, layoutJSON()); } catch (e) {} }, 800);
+}
+
+$('#send').onclick = async () => {
+  const b = $('#send'); b.disabled = true;
+  try {
+    const w = W(), h = H(), c = document.createElement('canvas'); c.width = w; c.height = h;
+    const d = renderBW(c.getContext('2d', {willReadFrequently: true}), w, h);
+    const bits = packBits(d, w, h);
+    let s = ''; for (let i = 0; i < bits.length; i += 4096) s += String.fromCharCode.apply(null, bits.subarray(i, i + 4096));
+    toast('傳送中，電子紙刷新約需 2–4 秒…', 6000);
+    await api(`/api/image?page=${editPage}&w=${w}&h=${h}&rot=${doc.rot}&fast=${$('#fast').checked ? 1 : 0}`, {method: 'POST', headers: {'Content-Type': 'text/plain'}, body: btoa(s)});
+    await saveLayout();
+    markSaved(true);
+    toast(`已更新電子紙（第 ${editPage + 1} 張）並儲存版面`);
+  } catch (e) { toast('失敗：' + e.message); }
+  b.disabled = false;
+};
+$('#save').onclick = async () => { try { await saveLayout(); markSaved(false); toast('版面已儲存到裝置'); } catch (e) { toast('失敗：' + e.message); } };
+$('#export').onclick = () => {
+  const a = el('a', {href: URL.createObjectURL(new Blob([layoutJSON()], {type: 'application/json'})), download: `epaper-layout-${editPage + 1}.json`});
+  document.body.append(a); a.click(); a.remove();
+};
+$('#import').onclick = () => $('#layoutfile').click();
+$('#layoutfile').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try { const j = JSON.parse(await f.text()); beginEdit(); applyLayout(j); commitEdit(); toast('已匯入'); }
+  catch (err) { cancelEdit(); toast('匯入失敗：' + err.message); }
+};
+
+// ---------- 多張圖片（頁） ----------
+function markSaved(shown) {
+  pageDirty = false;
+  if (shown) { if (dev.pages) dev.pages[editPage] = 1; dev.cur = editPage; }
+  renderPageBar();
+}
+function renderPageBar() {
+  const bar = $('#pagebar'); bar.innerHTML = '';
+  bar.append('圖片');
+  for (let p = 0; p < MAXP(); p++) {
+    const dirty = p === editPage ? pageDirty : !!(pageDocs[p] && pageDocs[p].dirty);
+    const cls = [dev.pages && dev.pages[p] ? 'has' : '', p === editPage ? 'edit' : '', dev.cur === p && !dev.offline ? 'cur' : '', dirty ? 'dirty' : ''].join(' ');
+    const b = el('button', {class: cls, title: `第 ${p + 1} 張`}, String(p + 1));
+    b.onclick = () => switchPage(p);
+    bar.append(b);
+  }
+}
+async function loadPage(p) {
+  editPage = p; undoStack = []; redoStack = []; editSnap = null;
+  const cached = pageDocs[p];
+  if (cached) {
+    doc = {rot: cached.rot, bg: cached.bg, items: cached.items}; pageDirty = cached.dirty;
+  } else {
+    let loaded = false;
+    if (!dev.offline) {
+      try { const r = await fetch(`/api/layout?page=${p}`); if (r.ok) { applyLayout(await r.json()); loaded = true; } } catch (e) {}
+    }
+    if (!loaded) {
+      try { const d = localStorage.getItem('epaper-draft-' + p); if (d) { applyLayout(JSON.parse(d)); loaded = true; } } catch (e) {}
+    }
+    if (!loaded) doc.items = p === 0 && !(dev.pages || []).some(Boolean) ? template().map(it => ({...it, id: nid++})) : [];
+    pageDirty = false;
+  }
+  selId = null; procCache.clear(); syncDocUI(); updUndo(); layoutStage(); refreshAll(); renderPageBar();
+}
+async function switchPage(p) {
+  if (p === editPage) return;
+  pageDocs[editPage] = {rot: doc.rot, bg: doc.bg, items: doc.items, dirty: pageDirty};
+  await loadPage(p);
+  if (!doc.items.length) toast(`第 ${p + 1} 張是空白的：加入素材，或按「套用名片範本」`);
+}
+async function pageAction(path, msg) {
+  try { await api(path, {method: 'POST'}); await loadInfo(); toast(msg); }
+  catch (e) { toast('失敗：' + e.message); }
+}
+$('#showpage').onclick = () => pageAction(`/api/show?page=${editPage}`, `螢幕已切到第 ${editPage + 1} 張`);
+$('#nextpage').onclick = () => pageAction('/api/next', '螢幕已切到下一張');
+$('#delpage').onclick = async () => {
+  if (!confirm(`刪除第 ${editPage + 1} 張的圖片與版面？（無法復原）`)) return;
+  try {
+    await api(`/api/delete?page=${editPage}`, {method: 'POST'});
+    try { localStorage.removeItem('epaper-draft-' + editPage); } catch (e) {}
+    delete pageDocs[editPage];
+    await loadInfo();
+    doc.items = []; pageDirty = false; undoStack = []; redoStack = [];
+    selId = null; updUndo(); refreshAll(); renderPageBar();
+    toast('已刪除');
+  } catch (e) { toast('失敗：' + e.message); }
+};
+
+// ---------- 裝置 ----------
+function showDev() {
+  $('#devline').textContent = dev.offline ? '離線預覽（未連上裝置）' : `${dev.panel} · ${dev.staip || dev.apip}`;
+  $('#apname').textContent = dev.ap || '-';
+  if (document.activeElement !== $('#ssid')) $('#ssid').value = dev.ssid || '';
+  $('#devinfo').innerHTML = dev.offline ? '未連上裝置' :
+    `面板：${dev.panel}（${dev.w}×${dev.h}）<br>熱點：${dev.ap}（${dev.apip}）<br>Wi-Fi：${dev.staip ? dev.ssid + '（' + dev.staip + '）' : '未連線'}<br>` +
+    `儲存空間剩餘：${Math.round(dev.fsFree / 1024)} KB<br>旋鈕：CLK GP${(dev.encoder || [])[0]}、DT GP${(dev.encoder || [])[1]}、SW GP${(dev.encoder || [])[2]}；BOOT 鍵 GP${dev.button}<br>閒置 ${dev.sleepMin || '∞'} 分鐘後休眠（按旋鈕或 BOOT 喚醒並換圖）<br>韌體：${dev.ver}`;
+}
+async function loadInfo() {
+  try { dev = await (await api('/api/info')).json(); }
+  catch (e) { dev.offline = true; }
+  showDev(); renderPageBar();
+}
+$('#wifisave').onclick = async () => {
+  try {
+    await api('/api/wifi', {method: 'POST', body: new URLSearchParams({ssid: $('#ssid').value, pass: $('#pass').value})});
+    $('#pass').value = ''; toast('已儲存，正在重新連線…'); setTimeout(loadInfo, 8000);
+  } catch (e) { toast('失敗：' + e.message); }
+};
+const devBtn = (id, path, msg, ask) => $(id).onclick = async () => {
+  if (ask && !confirm(ask)) return;
+  try { await api(path, {method: 'POST'}); toast(msg); } catch (e) { toast('失敗：' + e.message); }
+};
+devBtn('#netinfo', '/api/netinfo', '已顯示');
+devBtn('#redraw', '/api/redraw', '已重刷');
+devBtn('#clearscr', '/api/clear', '已清空螢幕', '清空螢幕？（版面檔仍保留）');
+devBtn('#reboot', '/api/reboot', '重新開機中…', '確定重新開機？');
+$('#undo').onclick = undo; $('#redo').onclick = redo;
+
+// ---------- 啟動 ----------
+(async () => {
+  await loadInfo();
+  await loadPage(dev.offline ? 0 : (dev.cur || 0));  // 先編輯目前螢幕顯示的那張
+  // 裝置上按按鈕換圖後，頁面上的「目前顯示」綠點也跟著更新
+  if (!dev.offline) setInterval(() => { if (!document.hidden) loadInfo(); }, 10000);
+})();
+</script>
+</body>
+</html>
